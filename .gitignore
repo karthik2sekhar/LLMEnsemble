@@ -1,0 +1,28 @@
+# LLM Ensemble - Root .gitignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker volumes
+data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
