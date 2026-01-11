@@ -6,3 +6,14 @@ export { SynthesisResult } from './SynthesisResult';
 export { LoadingState, LoadingSkeleton } from './LoadingState';
 export { HistoryPanel } from './History';
 export { ThemeToggle } from './ThemeToggle';
+
+// Router components
+export { RouteModeToggle } from './RouteModeToggle';
+export type { RouteMode } from './RouteModeToggle';
+export { RoutingInfoPanel } from './RoutingInfoPanel';
+export { CostVisualization } from './CostVisualization';
+export { SmartRouteResult } from './SmartRouteResult';
+
+// Temporal awareness components
+export { TemporalWarning } from './TemporalWarning';
+export { SearchResults } from './SearchResults';

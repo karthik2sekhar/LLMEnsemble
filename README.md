@@ -1,20 +1,47 @@
 # LLM Ensemble
 
-A production-ready web application that queries multiple OpenAI LLM models in parallel and synthesizes their responses into a unified, comprehensive answer.
+A production-ready web application that queries multiple OpenAI LLM models in parallel and synthesizes their responses into a unified, comprehensive answer. Now with **intelligent query routing** for cost optimization!
 
 ![LLM Ensemble Architecture](https://via.placeholder.com/800x400?text=LLM+Ensemble+Architecture)
 
 ## 🚀 Features
 
-- **Multi-Model Querying**: Query multiple OpenAI models (GPT-4 Turbo, GPT-4o, GPT-4o-mini) simultaneously
+- **Multi-Model Querying**: Query multiple OpenAI models (GPT-4 Turbo, GPT-4o, GPT-4o-mini, GPT-5.2) simultaneously
+- **🆕 Intelligent Query Routing**: Automatically classifies queries and routes to optimal model combinations
+- **Cost Optimization**: Smart routing saves 40-70% on simple/moderate queries
 - **Intelligent Synthesis**: Automatically synthesizes responses into a coherent final answer
 - **Real-time Progress**: Live progress indicators showing which models are responding
 - **Response Caching**: 24-hour caching to avoid duplicate API calls
+- **Classification Caching**: 24-hour caching for query classifications
 - **Rate Limiting**: Built-in rate limiting to prevent abuse
 - **Dark Mode**: Full dark mode support with system preference detection
 - **Query History**: Local storage-based history of previous questions
-- **Cost Tracking**: Real-time token usage and cost estimation
+- **Cost Tracking**: Real-time token usage and cost estimation with savings calculation
 - **Responsive Design**: Works on mobile, tablet, and desktop
+
+## 🧠 Intelligent Query Routing
+
+The application now includes an intelligent query router that automatically classifies incoming queries and routes them to the optimal combination of models based on:
+
+- **Complexity**: Simple, Moderate, or Complex
+- **Intent**: Factual, Creative, Analytical, Procedural, or Comparative
+- **Domain**: Coding, Technical, General, Creative, or Research
+
+### Routing Logic
+
+| Complexity | Models Used | Synthesis | Typical Savings |
+|------------|-------------|-----------|-----------------|
+| Simple | gpt-4o-mini only | No | 60-70% |
+| Moderate | gpt-4o-mini + gpt-4o | No | 40-50% |
+| Complex | All 3 models | Yes (GPT-5.2) | 0% |
+
+### Example Classifications
+
+| Query | Complexity | Routing |
+|-------|------------|---------|
+| "What is the capital of France?" | Simple | gpt-4o-mini |
+| "Explain how photosynthesis works" | Moderate | gpt-4o-mini + gpt-4o |
+| "Design a microservices architecture for e-commerce" | Complex | All models + synthesis |
 
 ## 📋 Table of Contents
 
@@ -189,9 +216,73 @@ docker-compose up -d --build
 |--------|----------|-------------|
 | GET | `/api/health` | Health check endpoint |
 | GET | `/api/models` | List available models |
-| POST | `/api/ensemble` | Query multiple models and synthesize |
+| POST | `/api/ensemble` | Query multiple models and synthesize (full ensemble) |
+| POST | `/api/route-and-answer` | 🆕 Intelligent routing - classifies and routes to optimal models |
 | POST | `/api/synthesize` | Synthesize pre-collected responses |
 | GET | `/api/stats` | Get usage statistics |
+| GET | `/api/routing-stats` | 🆕 Get routing statistics and cost savings |
+| POST | `/api/clear-classification-cache` | 🆕 Clear classification cache |
+
+### POST /api/route-and-answer (NEW)
+
+Intelligently route a query to optimal models based on classification.
+
+**Request:**
+```json
+{
+  "question": "What is the capital of France?",
+  "max_tokens": 2000,
+  "temperature": 0.7,
+  "override_models": null,
+  "force_synthesis": null
+}
+```
+
+**Response:**
+```json
+{
+  "question": "What is the capital of France?",
+  "classification": {
+    "complexity": "simple",
+    "intent": "factual",
+    "domain": "general",
+    "requires_search": false,
+    "recommended_models": ["gpt-4o-mini"],
+    "reasoning": "Simple factual lookup with a single definitive answer.",
+    "confidence": 0.98
+  },
+  "routing_decision": {
+    "models_to_use": ["gpt-4o-mini"],
+    "use_synthesis": false,
+    "synthesis_model": null,
+    "estimated_cost": 0.0003,
+    "estimated_time_seconds": 1.5,
+    "routing_rationale": "Simple query: Using single fast model for cost efficiency."
+  },
+  "models_used": ["gpt-4o-mini"],
+  "individual_responses": [...],
+  "final_answer": "The capital of France is Paris.",
+  "synthesis": null,
+  "cost_breakdown": {
+    "model_costs": {"gpt-4o-mini": 0.0002},
+    "synthesis_cost": 0,
+    "classification_cost": 0.00005,
+    "total_cost": 0.00025,
+    "full_ensemble_cost": 0.015,
+    "savings": 0.01475,
+    "savings_percentage": 98.3
+  },
+  "execution_metrics": {
+    "classification_time_ms": 450,
+    "model_execution_time_ms": {"gpt-4o-mini": 1200},
+    "synthesis_time_ms": 0,
+    "total_time_ms": 1650
+  },
+  "timestamp": "2026-01-09T00:00:00Z",
+  "fallback_used": false,
+  "fallback_reason": null
+}
+```
 
 ### POST /api/ensemble
 

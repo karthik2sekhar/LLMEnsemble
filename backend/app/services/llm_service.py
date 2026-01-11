@@ -84,22 +84,29 @@ class LLMService:
                 
                 logger.info(f"Calling model {model} (attempt {attempt + 1}/{self.settings.max_retries})")
                 
+                # Use max_completion_tokens for gpt-5.x models, max_tokens for others
+                completion_params = {
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a helpful, accurate, and thorough assistant. Provide clear, well-structured responses."
+                        },
+                        {
+                            "role": "user",
+                            "content": question
+                        }
+                    ],
+                    "temperature": temperature,
+                }
+                
+                if model.startswith("gpt-5"):
+                    completion_params["max_completion_tokens"] = max_tokens
+                else:
+                    completion_params["max_tokens"] = max_tokens
+                
                 response = await asyncio.wait_for(
-                    self.client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a helpful, accurate, and thorough assistant. Provide clear, well-structured responses."
-                            },
-                            {
-                                "role": "user",
-                                "content": question
-                            }
-                        ],
-                        max_tokens=max_tokens,
-                        temperature=temperature,
-                    ),
+                    self.client.chat.completions.create(**completion_params),
                     timeout=self.settings.request_timeout
                 )
                 

@@ -95,6 +95,122 @@ export interface ApiError {
   retry_after_seconds?: number;
 }
 
+// ==================== Query Router Types ====================
+
+export type ComplexityLevel = 'simple' | 'moderate' | 'complex';
+export type QueryIntent = 'factual' | 'creative' | 'analytical' | 'procedural' | 'comparative';
+export type QueryDomain = 'coding' | 'technical' | 'general' | 'creative' | 'research';
+export type TemporalScope = 'evergreen' | 'historical' | 'current' | 'future';
+
+export interface TemporalDetectionResult {
+  is_temporal: boolean;
+  temporal_scope: TemporalScope;
+  requires_current_data: boolean;
+  detected_keywords: string[];
+  detected_years: number[];
+  confidence: number;
+  reasoning: string;
+}
+
+export interface QueryClassification {
+  complexity: ComplexityLevel;
+  intent: QueryIntent;
+  domain: QueryDomain;
+  requires_search: boolean;
+  recommended_models: string[];
+  reasoning: string;
+  confidence: number;
+  temporal_scope?: TemporalScope;
+}
+
+export interface RoutingDecision {
+  models_to_use: string[];
+  use_synthesis: boolean;
+  synthesis_model: string | null;
+  estimated_cost: number;
+  estimated_time_seconds: number;
+  routing_rationale: string;
+  minimum_models_for_temporal?: number;
+  add_web_search_recommendation?: boolean;
+}
+
+export interface CostBreakdown {
+  model_costs: Record<string, number>;
+  synthesis_cost: number;
+  classification_cost: number;
+  total_cost: number;
+  full_ensemble_cost: number;
+  savings: number;
+  savings_percentage: number;
+  search_cost?: number;
+}
+
+export interface ExecutionMetrics {
+  classification_time_ms: number;
+  model_execution_time_ms: Record<string, number>;
+  synthesis_time_ms: number;
+  total_time_ms: number;
+  temporal_detection_time_ms?: number;
+  search_time_ms?: number;
+}
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  source?: string;
+}
+
+export interface SearchResults {
+  query: string;
+  results: SearchResult[];
+  total_results: number;
+  search_provider: string;
+}
+
+export interface RouteAndAnswerRequest {
+  question: string;
+  max_tokens?: number;
+  temperature?: number;
+  override_models?: string[];
+  force_synthesis?: boolean;
+  enable_search?: boolean;
+}
+
+export interface RouteAndAnswerResponse {
+  question: string;
+  classification: QueryClassification;
+  routing_decision: RoutingDecision;
+  models_used: string[];
+  individual_responses: ModelResponse[];
+  final_answer: string;
+  synthesis: SynthesisResult | null;
+  cost_breakdown: CostBreakdown;
+  execution_metrics: ExecutionMetrics;
+  timestamp: string;
+  fallback_used: boolean;
+  fallback_reason: string | null;
+  // Temporal/Search fields
+  temporal_detection?: TemporalDetectionResult;
+  was_search_used?: boolean;
+  search_results?: SearchResults;
+  routing_override_applied?: boolean;
+  routing_override_reason?: string;
+  ui_warning_message?: string;
+}
+
+export interface RoutingStats {
+  total_queries: number;
+  simple_queries: number;
+  moderate_queries: number;
+  complex_queries: number;
+  total_cost: number;
+  total_savings: number;
+  average_savings_percentage: number;
+  model_usage_distribution: Record<string, number>;
+  fallback_count: number;
+}
+
 // Create axios instance with default config
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
@@ -178,6 +294,32 @@ export const api = {
    */
   async getStats(): Promise<UsageStats> {
     const response = await apiClient.get<UsageStats>('/api/stats');
+    return response.data;
+  },
+
+  // ==================== Intelligent Router Methods ====================
+
+  /**
+   * Query with intelligent routing - classifies query and routes to optimal models
+   */
+  async routeAndAnswer(request: RouteAndAnswerRequest): Promise<RouteAndAnswerResponse> {
+    const response = await apiClient.post<RouteAndAnswerResponse>('/api/route-and-answer', request);
+    return response.data;
+  },
+
+  /**
+   * Get routing statistics
+   */
+  async getRoutingStats(): Promise<RoutingStats> {
+    const response = await apiClient.get<RoutingStats>('/api/routing-stats');
+    return response.data;
+  },
+
+  /**
+   * Clear classification cache
+   */
+  async clearClassificationCache(): Promise<{ message: string; timestamp: string }> {
+    const response = await apiClient.post<{ message: string; timestamp: string }>('/api/clear-classification-cache');
     return response.data;
   },
 };

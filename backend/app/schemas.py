@@ -132,3 +132,177 @@ class RateLimitResponse(BaseModel):
     error: str = "Rate limit exceeded"
     retry_after_seconds: int
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ==================== Query Router Schemas ====================
+
+class ComplexityLevel(str, Enum):
+    """Query complexity levels for routing."""
+    SIMPLE = "simple"
+    MODERATE = "moderate"
+    COMPLEX = "complex"
+
+
+class QueryIntent(str, Enum):
+    """Query intent classification."""
+    FACTUAL = "factual"
+    CREATIVE = "creative"
+    ANALYTICAL = "analytical"
+    PROCEDURAL = "procedural"
+    COMPARATIVE = "comparative"
+
+
+class QueryDomain(str, Enum):
+    """Query domain classification."""
+    CODING = "coding"
+    TECHNICAL = "technical"
+    GENERAL = "general"
+    CREATIVE = "creative"
+    RESEARCH = "research"
+
+
+class TemporalScope(str, Enum):
+    """Temporal scope of a query."""
+    EVERGREEN = "evergreen"  # Timeless facts that don't change
+    HISTORICAL = "historical"  # Past events with established facts
+    CURRENT = "current"  # Recent/ongoing events, current state
+    FUTURE = "future"  # Predictions, upcoming events
+
+
+class TemporalDetectionResult(BaseModel):
+    """Result of temporal detection analysis."""
+    is_temporal: bool = False
+    temporal_scope: TemporalScope = TemporalScope.EVERGREEN
+    requires_current_data: bool = False
+    detected_keywords: List[str] = Field(default_factory=list)
+    detected_years: List[int] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    reasoning: str = ""
+
+
+class QueryClassification(BaseModel):
+    """Classification result for a query."""
+    complexity: ComplexityLevel
+    intent: QueryIntent
+    domain: QueryDomain
+    requires_search: bool = False
+    temporal_scope: TemporalScope = TemporalScope.EVERGREEN
+    recommended_models: List[str]
+    reasoning: str
+    confidence: float = Field(ge=0.0, le=1.0, default=0.9)
+
+
+class RoutingDecision(BaseModel):
+    """Routing decision based on classification."""
+    models_to_use: List[str]
+    use_synthesis: bool
+    synthesis_model: Optional[str] = None
+    estimated_cost: float
+    estimated_time_seconds: float
+    routing_rationale: str
+    minimum_models_for_temporal: Optional[int] = None
+    add_web_search_recommendation: bool = False
+
+
+class CostBreakdown(BaseModel):
+    """Cost breakdown by model."""
+    model_costs: Dict[str, float]
+    synthesis_cost: float = 0.0
+    classification_cost: float = 0.0
+    search_cost: float = 0.0
+    total_cost: float
+    full_ensemble_cost: float
+    savings: float
+    savings_percentage: float
+
+
+class ExecutionMetrics(BaseModel):
+    """Execution time metrics by stage."""
+    classification_time_ms: float
+    temporal_detection_time_ms: float = 0.0
+    search_time_ms: float = 0.0
+    model_execution_time_ms: Dict[str, float]
+    synthesis_time_ms: float = 0.0
+    total_time_ms: float
+
+
+class RouteAndAnswerRequest(BaseModel):
+    """Request schema for intelligent routing endpoint."""
+    question: str = Field(..., min_length=1, max_length=5000, description="The question to ask")
+    max_tokens: Optional[int] = Field(
+        default=2000,
+        ge=100,
+        le=4000,
+        description="Maximum tokens for each model response"
+    )
+    temperature: Optional[float] = Field(
+        default=0.7,
+        ge=0.0,
+        le=2.0,
+        description="Temperature for response generation"
+    )
+    override_models: Optional[List[str]] = Field(
+        default=None,
+        description="Override automatic model selection with specific models"
+    )
+    force_synthesis: Optional[bool] = Field(
+        default=None,
+        description="Force synthesis regardless of complexity"
+    )
+    enable_search: bool = Field(
+        default=True,
+        description="Enable web search for temporal queries"
+    )
+    
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v: str) -> str:
+        """Validate and clean the question."""
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("Question cannot be empty or only whitespace")
+        return cleaned
+
+
+class RouteAndAnswerResponse(BaseModel):
+    """Response schema for intelligent routing endpoint."""
+    question: str
+    classification: QueryClassification
+    routing_decision: RoutingDecision
+    models_used: List[str]
+    individual_responses: List[ModelResponse]
+    final_answer: str
+    synthesis: Optional[SynthesisResult] = None
+    cost_breakdown: CostBreakdown
+    execution_metrics: ExecutionMetrics
+    timestamp: datetime
+    fallback_used: bool = False
+    fallback_reason: Optional[str] = None
+    # Temporal/Search fields
+    temporal_detection: Optional[TemporalDetectionResult] = None
+    was_search_used: bool = False
+    search_results: Optional[Dict[str, Any]] = None
+    routing_override_applied: bool = False
+    routing_override_reason: Optional[str] = None
+    ui_warning_message: Optional[str] = None
+
+
+class RoutingSettingsRequest(BaseModel):
+    """User configurable routing settings."""
+    complexity_threshold_for_multiple_models: ComplexityLevel = ComplexityLevel.MODERATE
+    max_cost_per_query: Optional[float] = Field(default=None, ge=0.0)
+    always_use_synthesis: bool = False
+    preferred_models: Optional[List[str]] = None
+
+
+class RoutingStats(BaseModel):
+    """Statistics for routing decisions."""
+    total_queries: int
+    simple_queries: int
+    moderate_queries: int
+    complex_queries: int
+    total_cost: float
+    total_savings: float
+    average_savings_percentage: float
+    model_usage_distribution: Dict[str, int]
+    fallback_count: int

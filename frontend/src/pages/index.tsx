@@ -3,11 +3,12 @@
  * 
  * A web application that queries multiple LLM models in parallel
  * and synthesizes their responses into a unified answer.
+ * Now with intelligent query routing for cost optimization.
  */
 
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Zap, Info, AlertCircle, DollarSign, Clock, BarChart3 } from 'lucide-react';
+import { Zap, Info, AlertCircle, DollarSign, Clock, BarChart3, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
 import {
@@ -18,9 +19,12 @@ import {
   LoadingState,
   HistoryPanel,
   ThemeToggle,
+  RouteModeToggle,
+  SmartRouteResult,
 } from '@/components';
+import type { RouteMode } from '@/components';
 import { useEnsembleLLM } from '@/hooks/useEnsembleLLM';
-import api, { HealthResponse } from '@/services/api';
+import api, { HealthResponse, RouteAndAnswerResponse, RoutingStats } from '@/services/api';
 
 export default function Home() {
   // Use the custom hook for ensemble functionality
@@ -42,6 +46,13 @@ export default function Home() {
   // Local state
   const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null);
   const [showStats, setShowStats] = useState(false);
+  
+  // Routing state
+  const [routeMode, setRouteMode] = useState<RouteMode>('smart');
+  const [smartRouteResponse, setSmartRouteResponse] = useState<RouteAndAnswerResponse | null>(null);
+  const [routingStats, setRoutingStats] = useState<RoutingStats | null>(null);
+  const [isSmartLoading, setIsSmartLoading] = useState(false);
+  const [smartError, setSmartError] = useState<string | null>(null);
 
   // Check API health on mount
   useEffect(() => {
@@ -57,6 +68,17 @@ export default function Home() {
       }
     };
     checkHealth();
+    
+    // Load routing stats
+    const loadRoutingStats = async () => {
+      try {
+        const stats = await api.getRoutingStats();
+        setRoutingStats(stats);
+      } catch (err) {
+        // Stats not critical, ignore errors
+      }
+    };
+    loadRoutingStats();
   }, []);
 
   // Show error toast when error state changes
@@ -75,9 +97,53 @@ export default function Home() {
     }
   }, [response]);
 
+  // Show success toast when smart route response is received
+  useEffect(() => {
+    if (smartRouteResponse) {
+      const savings = smartRouteResponse.cost_breakdown.savings_percentage;
+      toast.success(
+        `Smart route: ${smartRouteResponse.models_used.length} model(s), saved ${savings.toFixed(1)}%`
+      );
+      // Refresh routing stats
+      api.getRoutingStats().then(setRoutingStats).catch(() => {});
+    }
+  }, [smartRouteResponse]);
+
   // Handle question submission
   const handleSubmit = async (question: string) => {
-    await queryModels(question);
+    if (routeMode === 'smart') {
+      await handleSmartRoute(question);
+    } else {
+      await queryModels(question);
+    }
+  };
+
+  // Handle smart route query
+  const handleSmartRoute = async (question: string) => {
+    setIsSmartLoading(true);
+    setSmartError(null);
+    setSmartRouteResponse(null);
+    
+    try {
+      const result = await api.routeAndAnswer({
+        question,
+        max_tokens: 2000,
+        temperature: 0.7,
+      });
+      setSmartRouteResponse(result);
+    } catch (err: any) {
+      const errorMessage = err.message || 'Smart routing failed';
+      setSmartError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsSmartLoading(false);
+    }
+  };
+
+  // Clear smart route response
+  const clearSmartResponse = () => {
+    setSmartRouteResponse(null);
+    setSmartError(null);
   };
 
   // Calculate summary stats
@@ -101,6 +167,11 @@ export default function Home() {
   };
 
   const stats = getSummaryStats();
+  
+  // Determine current loading state
+  const currentLoading = routeMode === 'smart' ? isSmartLoading : isLoading;
+  const currentError = routeMode === 'smart' ? smartError : error;
+  const hasResponse = routeMode === 'smart' ? !!smartRouteResponse : !!response;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -153,23 +224,67 @@ export default function Home() {
 
       {/* Main content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Question input section */}
-        <section className="mb-8">
-          <QuestionInput onSubmit={handleSubmit} isLoading={isLoading} />
-        </section>
-
-        {/* Model selector */}
-        <section className="mb-8">
-          <ModelSelector
-            models={models}
-            selectedModels={selectedModels}
-            onSelectionChange={setSelectedModels}
-            disabled={isLoading}
+        {/* Route Mode Toggle */}
+        <section className="mb-6">
+          <RouteModeToggle
+            mode={routeMode}
+            onModeChange={(mode) => {
+              setRouteMode(mode);
+              // Clear responses when switching modes
+              if (mode === 'smart') {
+                clearResponse();
+              } else {
+                clearSmartResponse();
+              }
+            }}
+            disabled={currentLoading}
           />
         </section>
 
-        {/* Info banner for first-time users */}
-        {!response && !isLoading && history.length === 0 && (
+        {/* Question input section */}
+        <section className="mb-8">
+          <QuestionInput onSubmit={handleSubmit} isLoading={currentLoading} />
+        </section>
+
+        {/* Model selector - only show in ensemble mode */}
+        {routeMode === 'ensemble' && (
+          <section className="mb-8">
+            <ModelSelector
+              models={models}
+              selectedModels={selectedModels}
+              onSelectionChange={setSelectedModels}
+              disabled={currentLoading}
+            />
+          </section>
+        )}
+
+        {/* Smart route info for first-time users */}
+        {routeMode === 'smart' && !smartRouteResponse && !isSmartLoading && (
+          <div className="mb-8 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
+            <div className="flex items-start gap-3">
+              <Zap className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-green-900 dark:text-green-100">
+                  Smart Route Mode
+                </h3>
+                <p className="mt-1 text-sm text-green-700 dark:text-green-300">
+                  Your question will be automatically classified and routed to the optimal 
+                  model(s) based on complexity, intent, and domain. Simple questions use 
+                  fewer models to save costs, while complex questions use all models with synthesis.
+                </p>
+                {routingStats && routingStats.total_queries > 0 && (
+                  <p className="mt-2 text-xs text-green-600 dark:text-green-400">
+                    Session stats: {routingStats.total_queries} queries, 
+                    ${routingStats.total_savings.toFixed(4)} saved ({routingStats.average_savings_percentage.toFixed(1)}% avg)
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Info banner for ensemble mode first-time users */}
+        {routeMode === 'ensemble' && !response && !isLoading && history.length === 0 && (
           <div className="mb-8 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
@@ -188,10 +303,31 @@ export default function Home() {
         )}
 
         {/* Loading state */}
-        {isLoading && <LoadingState models={selectedModels} />}
+        {currentLoading && (
+          <LoadingState 
+            models={routeMode === 'smart' ? ['Classifying query...'] : selectedModels} 
+          />
+        )}
 
-        {/* Results section */}
-        {response && !isLoading && (
+        {/* Smart Route Results */}
+        {routeMode === 'smart' && smartRouteResponse && !isSmartLoading && (
+          <div className="space-y-8 animate-fade-in">
+            <SmartRouteResult result={smartRouteResponse} />
+            
+            {/* Clear button */}
+            <div className="text-center">
+              <button
+                onClick={clearSmartResponse}
+                className="px-6 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                Clear results and ask another question
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Ensemble Results section */}
+        {routeMode === 'ensemble' && response && !isLoading && (
           <div className="space-y-8 animate-fade-in">
             {/* Summary stats */}
             {stats && (
@@ -273,7 +409,7 @@ export default function Home() {
         )}
 
         {/* Error state */}
-        {error && !isLoading && !response && (
+        {currentError && !currentLoading && !hasResponse && (
           <div className="p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0" />
@@ -282,10 +418,10 @@ export default function Home() {
                   Something went wrong
                 </h3>
                 <p className="mt-1 text-sm text-red-700 dark:text-red-300">
-                  {error}
+                  {currentError}
                 </p>
                 <button
-                  onClick={clearResponse}
+                  onClick={() => routeMode === 'smart' ? clearSmartResponse() : clearResponse()}
                   className="mt-3 px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-sm hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
                 >
                   Try again
@@ -308,7 +444,7 @@ export default function Home() {
       <footer className="border-t border-gray-200 dark:border-gray-800 py-6 mt-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-            LLM Ensemble v1.0.0 • Query multiple AI models simultaneously
+            LLM Ensemble v1.1.0 • Intelligent Query Routing • Query multiple AI models simultaneously
           </p>
         </div>
       </footer>

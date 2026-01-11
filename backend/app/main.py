@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .routes import ensemble_router, health_router
+from .routes.router import router as router_router
 from .utils.logging import get_logger, setup_logging
 
 # Setup logging
@@ -98,6 +99,7 @@ async def log_requests(request: Request, call_next):
 # Include routers
 app.include_router(health_router)
 app.include_router(ensemble_router)
+app.include_router(router_router)
 
 
 # Run with uvicorn if executed directly

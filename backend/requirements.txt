@@ -4,7 +4,7 @@ uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 
 # OpenAI
-openai==1.12.0
+openai>=2.14.0
 
 # Data validation and settings
 pydantic==2.5.3

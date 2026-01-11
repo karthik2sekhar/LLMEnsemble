@@ -170,26 +170,33 @@ Provide your synthesized answer:"""
             
             logger.info(f"Synthesizing {len(successful_responses)} responses using {synthesis_model}")
             
+            # Use max_completion_tokens for gpt-5.x models, max_tokens for others
+            completion_params = {
+                "model": synthesis_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an expert at synthesizing information from multiple sources. "
+                            "Your goal is to create a comprehensive, accurate, and well-organized "
+                            "summary that captures the best insights from all sources."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": synthesis_prompt
+                    }
+                ],
+                "temperature": 0.5,  # Lower temperature for more focused synthesis
+            }
+            
+            if synthesis_model.startswith("gpt-5"):
+                completion_params["max_completion_tokens"] = max_tokens
+            else:
+                completion_params["max_tokens"] = max_tokens
+            
             response = await asyncio.wait_for(
-                self.client.chat.completions.create(
-                    model=synthesis_model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are an expert at synthesizing information from multiple sources. "
-                                "Your goal is to create a comprehensive, accurate, and well-organized "
-                                "summary that captures the best insights from all sources."
-                            )
-                        },
-                        {
-                            "role": "user",
-                            "content": synthesis_prompt
-                        }
-                    ],
-                    max_tokens=max_tokens,
-                    temperature=0.5,  # Lower temperature for more focused synthesis
-                ),
+                self.client.chat.completions.create(**completion_params),
                 timeout=self.settings.request_timeout
             )
             
