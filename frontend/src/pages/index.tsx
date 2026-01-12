@@ -4,11 +4,12 @@
  * A web application that queries multiple LLM models in parallel
  * and synthesizes their responses into a unified answer.
  * Now with intelligent query routing for cost optimization.
+ * Features Time-Travel Answers for temporally sensitive questions.
  */
 
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Zap, Info, AlertCircle, DollarSign, Clock, BarChart3, Settings } from 'lucide-react';
+import { Zap, Info, AlertCircle, DollarSign, Clock, BarChart3, Settings, History } from 'lucide-react';
 import clsx from 'clsx';
 
 import {
@@ -21,8 +22,9 @@ import {
   ThemeToggle,
   RouteModeToggle,
   SmartRouteResult,
+  TimeTravelTimeline,
 } from '@/components';
-import type { RouteMode } from '@/components';
+import type { RouteMode, TimeTravelResponse } from '@/components';
 import { useEnsembleLLM } from '@/hooks/useEnsembleLLM';
 import api, { HealthResponse, RouteAndAnswerResponse, RoutingStats } from '@/services/api';
 
@@ -53,6 +55,11 @@ export default function Home() {
   const [routingStats, setRoutingStats] = useState<RoutingStats | null>(null);
   const [isSmartLoading, setIsSmartLoading] = useState(false);
   const [smartError, setSmartError] = useState<string | null>(null);
+
+  // Time-travel state
+  const [timeTravelResponse, setTimeTravelResponse] = useState<TimeTravelResponse | null>(null);
+  const [isTimeTravelLoading, setIsTimeTravelLoading] = useState(false);
+  const [timeTravelError, setTimeTravelError] = useState<string | null>(null);
 
   // Check API health on mount
   useEffect(() => {
@@ -109,10 +116,25 @@ export default function Home() {
     }
   }, [smartRouteResponse]);
 
+  // Show success toast when time-travel response is received
+  useEffect(() => {
+    if (timeTravelResponse && timeTravelResponse.is_eligible) {
+      toast.success(
+        `Time-Travel: ${timeTravelResponse.snapshots.length} snapshots across time`
+      );
+    } else if (timeTravelResponse && !timeTravelResponse.is_eligible) {
+      toast(`Time-Travel not applicable: ${timeTravelResponse.skip_reason}`, {
+        icon: 'ℹ️',
+      });
+    }
+  }, [timeTravelResponse]);
+
   // Handle question submission
   const handleSubmit = async (question: string) => {
     if (routeMode === 'smart') {
       await handleSmartRoute(question);
+    } else if (routeMode === 'time-travel') {
+      await handleTimeTravel(question);
     } else {
       await queryModels(question);
     }
@@ -146,6 +168,33 @@ export default function Home() {
     setSmartError(null);
   };
 
+  // Handle time-travel query
+  const handleTimeTravel = async (question: string) => {
+    setIsTimeTravelLoading(true);
+    setTimeTravelError(null);
+    setTimeTravelResponse(null);
+    
+    try {
+      const result = await api.getTimeTravelAnswer({
+        question,
+        force_time_travel: false,
+      });
+      setTimeTravelResponse(result);
+    } catch (err: any) {
+      const errorMessage = err.message || 'Time-travel query failed';
+      setTimeTravelError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsTimeTravelLoading(false);
+    }
+  };
+
+  // Clear time-travel response
+  const clearTimeTravelResponse = () => {
+    setTimeTravelResponse(null);
+    setTimeTravelError(null);
+  };
+
   // Calculate summary stats
   const getSummaryStats = () => {
     if (!response) return null;
@@ -169,9 +218,21 @@ export default function Home() {
   const stats = getSummaryStats();
   
   // Determine current loading state
-  const currentLoading = routeMode === 'smart' ? isSmartLoading : isLoading;
-  const currentError = routeMode === 'smart' ? smartError : error;
-  const hasResponse = routeMode === 'smart' ? !!smartRouteResponse : !!response;
+  const currentLoading = routeMode === 'smart' 
+    ? isSmartLoading 
+    : routeMode === 'time-travel' 
+      ? isTimeTravelLoading 
+      : isLoading;
+  const currentError = routeMode === 'smart' 
+    ? smartError 
+    : routeMode === 'time-travel' 
+      ? timeTravelError 
+      : error;
+  const hasResponse = routeMode === 'smart' 
+    ? !!smartRouteResponse 
+    : routeMode === 'time-travel' 
+      ? !!timeTravelResponse 
+      : !!response;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -233,8 +294,13 @@ export default function Home() {
               // Clear responses when switching modes
               if (mode === 'smart') {
                 clearResponse();
+                clearTimeTravelResponse();
+              } else if (mode === 'time-travel') {
+                clearResponse();
+                clearSmartResponse();
               } else {
                 clearSmartResponse();
+                clearTimeTravelResponse();
               }
             }}
             disabled={currentLoading}
@@ -283,6 +349,37 @@ export default function Home() {
           </div>
         )}
 
+        {/* Time-travel info for first-time users */}
+        {routeMode === 'time-travel' && !timeTravelResponse && !isTimeTravelLoading && (
+          <div className="mb-8 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl">
+            <div className="flex items-start gap-3">
+              <History className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-purple-900 dark:text-purple-100">
+                  Time-Travel Answers Mode
+                </h3>
+                <p className="mt-1 text-sm text-purple-700 dark:text-purple-300">
+                  See how answers evolve over time! This mode shows historical snapshots 
+                  of how the answer to your question would have changed across different time periods.
+                  Perfect for questions about AI developments, tech releases, market trends, 
+                  rankings, and current events.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full">
+                    ⭐ HIGH: Current events, tech releases
+                  </span>
+                  <span className="px-2 py-1 text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded-full">
+                    ⭐ MEDIUM: Industry evolution
+                  </span>
+                  <span className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full">
+                    ⭐ LOW: Timeless facts (skipped)
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Info banner for ensemble mode first-time users */}
         {routeMode === 'ensemble' && !response && !isLoading && history.length === 0 && (
           <div className="mb-8 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
@@ -318,6 +415,23 @@ export default function Home() {
             <div className="text-center">
               <button
                 onClick={clearSmartResponse}
+                className="px-6 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                Clear results and ask another question
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Time-Travel Results */}
+        {routeMode === 'time-travel' && timeTravelResponse && !isTimeTravelLoading && (
+          <div className="space-y-8 animate-fade-in">
+            <TimeTravelTimeline result={timeTravelResponse} />
+            
+            {/* Clear button */}
+            <div className="text-center">
+              <button
+                onClick={clearTimeTravelResponse}
                 className="px-6 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
               >
                 Clear results and ask another question
@@ -421,7 +535,11 @@ export default function Home() {
                   {currentError}
                 </p>
                 <button
-                  onClick={() => routeMode === 'smart' ? clearSmartResponse() : clearResponse()}
+                  onClick={() => {
+                    if (routeMode === 'smart') clearSmartResponse();
+                    else if (routeMode === 'time-travel') clearTimeTravelResponse();
+                    else clearResponse();
+                  }}
                   className="mt-3 px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-sm hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
                 >
                   Try again

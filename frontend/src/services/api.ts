@@ -199,6 +199,56 @@ export interface RouteAndAnswerResponse {
   ui_warning_message?: string;
 }
 
+// ==================== Time-Travel Types ====================
+
+export type TemporalSensitivityLevel = 'high' | 'medium' | 'low' | 'none';
+
+export interface TimeSnapshot {
+  date: string;
+  date_label: string;
+  answer: string;
+  key_changes: string[];
+  data_points: string[];
+  model_used: string;
+  tokens_used: number;
+  cost_estimate: number;
+  response_time_seconds: number;
+}
+
+export interface TimeTravelRequest {
+  question: string;
+  force_time_travel?: boolean;
+  max_snapshots?: number;
+}
+
+export interface TimeTravelResponse {
+  question: string;
+  temporal_sensitivity: TemporalSensitivityLevel;
+  sensitivity_reasoning: string;
+  is_eligible: boolean;
+  skip_reason?: string;
+  snapshots: TimeSnapshot[];
+  evolution_narrative: string;
+  insights: string[];
+  change_velocity: string;
+  future_outlook: string;
+  total_cost: number;
+  total_time_seconds: number;
+  timestamp: string;
+}
+
+export interface TemporalSensitivityCheck {
+  question: string;
+  temporal_sensitivity: TemporalSensitivityLevel;
+  reasoning: string;
+  suggested_time_points: Array<{
+    date: string;
+    label: string;
+  }>;
+  time_travel_eligible: boolean;
+  timestamp: string;
+}
+
 export interface RoutingStats {
   total_queries: number;
   simple_queries: number;
@@ -320,6 +370,28 @@ export const api = {
    */
   async clearClassificationCache(): Promise<{ message: string; timestamp: string }> {
     const response = await apiClient.post<{ message: string; timestamp: string }>('/api/clear-classification-cache');
+    return response.data;
+  },
+
+  // ==================== Time-Travel Methods ====================
+
+  /**
+   * Generate time-travel answer showing how response evolved over time
+   */
+  async getTimeTravelAnswer(request: TimeTravelRequest): Promise<TimeTravelResponse> {
+    const response = await apiClient.post<TimeTravelResponse>('/api/time-travel', request);
+    return response.data;
+  },
+
+  /**
+   * Check temporal sensitivity of a question without generating full time-travel
+   */
+  async checkTemporalSensitivity(question: string): Promise<TemporalSensitivityCheck> {
+    const response = await apiClient.post<TemporalSensitivityCheck>(
+      '/api/check-temporal-sensitivity',
+      null,
+      { params: { question } }
+    );
     return response.data;
   },
 };

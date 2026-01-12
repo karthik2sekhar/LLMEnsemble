@@ -1,6 +1,6 @@
 # LLM Ensemble
 
-A production-ready web application that queries multiple OpenAI LLM models in parallel and synthesizes their responses into a unified, comprehensive answer. Now with **intelligent query routing** for cost optimization!
+A production-ready web application that queries multiple OpenAI LLM models in parallel and synthesizes their responses into a unified, comprehensive answer. Now with **intelligent query routing** for cost optimization and **Time-Travel Answers** for temporal questions!
 
 ![LLM Ensemble Architecture](https://via.placeholder.com/800x400?text=LLM+Ensemble+Architecture)
 
@@ -8,6 +8,9 @@ A production-ready web application that queries multiple OpenAI LLM models in pa
 
 - **Multi-Model Querying**: Query multiple OpenAI models (GPT-4 Turbo, GPT-4o, GPT-4o-mini, GPT-5.2) simultaneously
 - **🆕 Intelligent Query Routing**: Automatically classifies queries and routes to optimal model combinations
+- **🆕 Time-Travel Answers**: See how answers evolve over time for temporally sensitive questions
+- **🆕 Temporal Awareness**: Automatic detection of time-sensitive queries
+- **🆕 Real-time Web Search**: Perplexity API integration for current information
 - **Cost Optimization**: Smart routing saves 40-70% on simple/moderate queries
 - **Intelligent Synthesis**: Automatically synthesizes responses into a coherent final answer
 - **Real-time Progress**: Live progress indicators showing which models are responding
@@ -18,6 +21,34 @@ A production-ready web application that queries multiple OpenAI LLM models in pa
 - **Query History**: Local storage-based history of previous questions
 - **Cost Tracking**: Real-time token usage and cost estimation with savings calculation
 - **Responsive Design**: Works on mobile, tablet, and desktop
+
+## ⏰ Time-Travel Answers
+
+The application now features a "Time-Travel Answers" mode that shows how answers evolve over time for temporally sensitive questions.
+
+### How It Works
+
+1. **Temporal Sensitivity Classification**: Questions are classified as HIGH, MEDIUM, LOW, or NONE sensitivity
+2. **Time Point Identification**: Optimal historical dates are selected based on the question topic
+3. **Snapshot Generation**: Answers are generated for each time point as if responding on that date
+4. **Evolution Analysis**: Key changes between periods are extracted and an evolution narrative is synthesized
+
+### Temporal Sensitivity Levels
+
+| Level | Description | Examples | Time-Travel |
+|-------|-------------|----------|-------------|
+| **HIGH** | Answer changes significantly | AI models, current events, market data | ✅ Applied |
+| **MEDIUM** | Answer may evolve | Business strategies, industry standards | ✅ Applied |
+| **LOW** | Relatively stable | Historical facts | ❌ Skipped |
+| **NONE** | Timeless facts | Definitions, scientific laws | ❌ Skipped |
+
+### Example Questions
+
+| Question | Sensitivity | Time Points |
+|----------|-------------|-------------|
+| "What are the latest AI models?" | HIGH | 2023 → GPT-4o → Today |
+| "Who is the US President?" | HIGH | 2021 → 2024 Election → Today |
+| "What is photosynthesis?" | NONE | Skipped (timeless) |
 
 ## 🧠 Intelligent Query Routing
 

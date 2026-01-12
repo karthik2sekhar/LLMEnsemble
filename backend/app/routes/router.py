@@ -8,10 +8,12 @@ from fastapi import APIRouter, HTTPException, status
 
 from ..schemas import (
     RouteAndAnswerRequest, RouteAndAnswerResponse,
-    RoutingStats, ErrorResponse
+    RoutingStats, ErrorResponse,
+    TimeTravelRequest, TimeTravelResponse, TimeSnapshot, TemporalSensitivityLevel
 )
 from ..services.router_service import router_service
 from ..services.search_service import search_service
+from ..services.time_travel_service import time_travel_service
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -142,6 +144,152 @@ async def clear_classification_cache():
         return {"message": "Classification cache cleared", "timestamp": datetime.utcnow()}
     except Exception as e:
         logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+# ==================== Time-Travel Answers Endpoint ====================
+
+@router.post(
+    "/time-travel",
+    response_model=TimeTravelResponse,
+    responses={
+        200: {"description": "Successfully generated time-travel answer"},
+        400: {"model": ErrorResponse, "description": "Invalid request"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+    summary="Time-Travel Answers",
+    description="""
+    Generate answers showing how responses would have changed across different time periods.
+    
+    **Purpose:**
+    This feature demonstrates answer evolution for temporally sensitive questions,
+    showing users how information changes over time.
+    
+    **Flow:**
+    1. Question is analyzed for temporal sensitivity (HIGH/MEDIUM/LOW/NONE)
+    2. For HIGH/MEDIUM sensitivity, time points are identified
+    3. Answer snapshots are generated for each time point
+    4. Key changes between periods are extracted
+    5. Evolution narrative is synthesized
+    
+    **Temporal Sensitivity Levels:**
+    - **HIGH**: Current events, tech releases, market data, sports results, rankings
+    - **MEDIUM**: Business evolution, scientific understanding, industry standards
+    - **LOW**: Historical facts, relatively stable information
+    - **NONE**: Timeless facts, definitions, philosophical concepts
+    
+    **Time-Travel is Applied For:**
+    - Questions with HIGH temporal sensitivity (automatic)
+    - Questions with MEDIUM sensitivity (automatic)
+    - Any question when `force_time_travel=true`
+    
+    **Time-Travel is Skipped When:**
+    - LOW/NONE temporal sensitivity (unless forced)
+    - Answers are identical across all time periods
+    - Feature is disabled in configuration
+    
+    **Output Format:**
+    Timeline view with snapshots, key changes, evolution narrative, and insights.
+    """
+)
+async def time_travel_answer(request: TimeTravelRequest) -> TimeTravelResponse:
+    """
+    Generate time-travel answer showing how response evolves over time.
+    
+    Returns:
+    - Temporal sensitivity classification
+    - List of time snapshots with answers at each period
+    - Key changes between periods
+    - Evolution narrative
+    - Insights and future outlook
+    - Cost and timing metrics
+    """
+    try:
+        logger.info(f"Time-travel request: {request.question[:100]}...")
+        
+        # Generate time-travel answer
+        result = await time_travel_service.generate_time_travel_answer(
+            question=request.question,
+            force_time_travel=request.force_time_travel
+        )
+        
+        # Convert to response schema
+        snapshots = [
+            TimeSnapshot(
+                date=s.date,
+                date_label=s.date_label,
+                answer=s.answer,
+                key_changes=s.key_changes,
+                data_points=s.data_points,
+                model_used=s.model_used,
+                tokens_used=s.tokens_used,
+                cost_estimate=s.cost_estimate,
+                response_time_seconds=s.response_time_seconds
+            )
+            for s in result.snapshots
+        ]
+        
+        return TimeTravelResponse(
+            question=result.question,
+            temporal_sensitivity=TemporalSensitivityLevel(result.temporal_sensitivity.value),
+            sensitivity_reasoning=result.sensitivity_reasoning,
+            is_eligible=result.is_eligible,
+            skip_reason=result.skip_reason,
+            snapshots=snapshots,
+            evolution_narrative=result.evolution_narrative,
+            insights=result.insights,
+            change_velocity=result.change_velocity,
+            future_outlook=result.future_outlook,
+            total_cost=result.total_cost,
+            total_time_seconds=result.total_time_seconds,
+            timestamp=datetime.utcnow()
+        )
+        
+    except ValueError as e:
+        logger.error(f"Validation error in time-travel: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error in time-travel: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate time-travel answer: {str(e)}"
+        )
+
+
+@router.post(
+    "/check-temporal-sensitivity",
+    summary="Check Temporal Sensitivity",
+    description="Check the temporal sensitivity of a question without generating time-travel answer."
+)
+async def check_temporal_sensitivity(question: str):
+    """
+    Check temporal sensitivity of a question.
+    
+    Returns just the sensitivity classification without generating full time-travel.
+    """
+    try:
+        sensitivity, reasoning = time_travel_service.classify_temporal_sensitivity(question)
+        time_points = time_travel_service.identify_time_points(question, sensitivity)
+        
+        return {
+            "question": question,
+            "temporal_sensitivity": sensitivity.value,
+            "reasoning": reasoning,
+            "suggested_time_points": [
+                {"date": tp[0].isoformat(), "label": tp[1]}
+                for tp in time_points
+            ],
+            "time_travel_eligible": sensitivity.value in ["high", "medium"],
+            "timestamp": datetime.utcnow()
+        }
+    except Exception as e:
+        logger.error(f"Error checking temporal sensitivity: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

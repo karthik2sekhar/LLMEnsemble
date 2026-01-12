@@ -306,3 +306,68 @@ class RoutingStats(BaseModel):
     average_savings_percentage: float
     model_usage_distribution: Dict[str, int]
     fallback_count: int
+
+
+# ==================== Time-Travel Answer Schemas ====================
+
+class TemporalSensitivityLevel(str, Enum):
+    """Classification of how temporally sensitive a question is."""
+    HIGH = "high"      # Answer changes significantly over time
+    MEDIUM = "medium"  # Answer may change moderately  
+    LOW = "low"        # Answer is mostly timeless
+    NONE = "none"      # Answer doesn't change at all
+
+
+class TimeSnapshot(BaseModel):
+    """A snapshot of the answer at a specific point in time."""
+    date: datetime
+    date_label: str  # e.g., "Jan 1, 2024 - Pre-GPT-4o Era"
+    answer: str
+    key_changes: List[str] = Field(default_factory=list)
+    data_points: List[str] = Field(default_factory=list)
+    model_used: str = ""
+    tokens_used: int = 0
+    cost_estimate: float = 0.0
+    response_time_seconds: float = 0.0
+
+
+class TimeTravelRequest(BaseModel):
+    """Request schema for time-travel endpoint."""
+    question: str = Field(..., min_length=1, max_length=5000, description="The question to analyze")
+    force_time_travel: bool = Field(
+        default=False,
+        description="Force time-travel analysis even for low-sensitivity questions"
+    )
+    max_snapshots: Optional[int] = Field(
+        default=None,
+        ge=2,
+        le=7,
+        description="Maximum number of time snapshots to generate"
+    )
+    
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v: str) -> str:
+        """Validate and clean the question."""
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("Question cannot be empty or only whitespace")
+        return cleaned
+
+
+class TimeTravelResponse(BaseModel):
+    """Response schema for time-travel endpoint."""
+    question: str
+    temporal_sensitivity: TemporalSensitivityLevel
+    sensitivity_reasoning: str
+    is_eligible: bool = True
+    skip_reason: Optional[str] = None
+    snapshots: List[TimeSnapshot] = Field(default_factory=list)
+    evolution_narrative: str = ""
+    insights: List[str] = Field(default_factory=list)
+    change_velocity: str = ""  # "fast", "moderate", "slow", "minimal"
+    future_outlook: str = ""
+    total_cost: float = 0.0
+    total_time_seconds: float = 0.0
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+

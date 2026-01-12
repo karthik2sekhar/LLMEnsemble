@@ -17,3 +17,7 @@ export { SmartRouteResult } from './SmartRouteResult';
 // Temporal awareness components
 export { TemporalWarning } from './TemporalWarning';
 export { SearchResults } from './SearchResults';
+
+// Time-travel components
+export { TimeTravelTimeline } from './TimeTravelTimeline';
+export type { TimeTravelResponse, TimeSnapshot, TemporalSensitivityLevel } from './TimeTravelTimeline';

@@ -192,6 +192,13 @@ class Settings(BaseSettings):
     perplexity_timeout: int = Field(default=30, env="PERPLEXITY_TIMEOUT")
     perplexity_recency_filter: str = Field(default="month", env="PERPLEXITY_RECENCY_FILTER")
     
+    # Time-Travel Feature Configuration
+    time_travel_enabled: bool = Field(default=True, env="TIME_TRAVEL_ENABLED")
+    time_travel_min_snapshots: int = Field(default=3, env="TIME_TRAVEL_MIN_SNAPSHOTS")
+    time_travel_max_snapshots: int = Field(default=5, env="TIME_TRAVEL_MAX_SNAPSHOTS")
+    time_travel_sensitivity_threshold: float = Field(default=0.7, env="TIME_TRAVEL_SENSITIVITY_THRESHOLD")
+    time_travel_include_future: bool = Field(default=False, env="TIME_TRAVEL_INCLUDE_FUTURE")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
