@@ -245,7 +245,10 @@ async def time_travel_answer(request: TimeTravelRequest) -> TimeTravelResponse:
             future_outlook=result.future_outlook,
             total_cost=result.total_cost,
             total_time_seconds=result.total_time_seconds,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.utcnow(),
+            # Routing fix: expose complexity classification for transparency
+            base_complexity=result.base_complexity.value if result.base_complexity else None,
+            routing_validation_passed=result.routing_validation_passed
         )
         
     except ValueError as e:

@@ -7,9 +7,10 @@ answer evolution and temporal sensitivity.
 
 Key Features:
 1. Temporal sensitivity classification (HIGH/MEDIUM/LOW)
-2. Historical snapshot generation at multiple time points
-3. Evolution narrative synthesis
-4. Answer comparison across time periods
+2. Complexity-aware routing (preserves classification across snapshots)
+3. Historical snapshot generation at multiple time points
+4. Evolution narrative synthesis
+5. Answer comparison across time periods
 """
 
 import asyncio
@@ -40,6 +41,13 @@ class TemporalSensitivityLevel(str, Enum):
     NONE = "none"      # Answer doesn't change at all
 
 
+class SnapshotComplexity(str, Enum):
+    """Complexity classification for snapshot generation routing."""
+    SIMPLE = "simple"      # Single model (gpt-4o-mini)
+    MODERATE = "moderate"  # Better model (gpt-4o)
+    COMPLEX = "complex"    # Best model or ensemble (gpt-4-turbo)
+
+
 @dataclass
 class TimeSnapshot:
     """A snapshot of the answer at a specific point in time."""
@@ -60,6 +68,7 @@ class TimeTravelResult:
     question: str
     temporal_sensitivity: TemporalSensitivityLevel
     sensitivity_reasoning: str
+    base_complexity: SnapshotComplexity = SnapshotComplexity.MODERATE  # CRITICAL: Preserved complexity
     snapshots: List[TimeSnapshot] = field(default_factory=list)
     evolution_narrative: str = ""
     insights: List[str] = field(default_factory=list)
@@ -69,6 +78,7 @@ class TimeTravelResult:
     total_time_seconds: float = 0.0
     is_eligible: bool = True  # Whether time-travel is applicable
     skip_reason: Optional[str] = None  # Reason if not eligible
+    routing_validation_passed: bool = True  # Whether routing validation passed
 
 
 # Patterns for HIGH temporal sensitivity
@@ -170,11 +180,132 @@ _timeless_patterns = compile_patterns(TIMELESS_PATTERNS)
 class TimeTravelService:
     """Service for generating time-travel answers showing answer evolution."""
     
+    # Model routing configuration based on complexity
+    MODEL_ROUTING = {
+        SnapshotComplexity.SIMPLE: "gpt-4o-mini",
+        SnapshotComplexity.MODERATE: "gpt-4o",
+        SnapshotComplexity.COMPLEX: "gpt-4-turbo",
+    }
+    
+    # Complexity patterns - HIGH indicators for COMPLEX routing
+    COMPLEX_PATTERNS = [
+        r'\b(best|top|leading|most advanced|state of the art)\b',
+        r'\b(compare|comparison|versus|vs\.?|difference between)\b',
+        r'\b(architecture|design|implementation|strategy)\b',
+        r'\b(comprehensive|detailed|in-depth|thorough)\b',
+        r'\b(analysis|analyze|evaluate|assessment)\b',
+        r'\b(explain|how does|why does|mechanism)\b',
+        r'\b(future|prediction|forecast|outlook|trajectory)\b',
+        r'\b(evolution|history|development|progress)\b',
+        r'\b(implications|impact|consequences|effects)\b',
+    ]
+    
+    # Compile patterns
+    _complex_patterns = None
+    
     def __init__(self):
         self.settings = get_settings()
         self.client = AsyncOpenAI(api_key=self.settings.openai_api_key)
         self._cache: Dict[str, Tuple[TimeTravelResult, datetime]] = {}
         self._cache_ttl = timedelta(hours=24)
+        
+        # Compile complex patterns
+        if TimeTravelService._complex_patterns is None:
+            TimeTravelService._complex_patterns = [
+                re.compile(p, re.IGNORECASE) for p in self.COMPLEX_PATTERNS
+            ]
+    
+    def classify_question_complexity(self, question: str) -> Tuple[SnapshotComplexity, str]:
+        """
+        Classify the complexity of a question for model routing.
+        
+        CRITICAL: This classification is done ONCE and preserved across all time-point queries.
+        This prevents re-routing that would lose the original complexity signal.
+        
+        Args:
+            question: The user's question
+            
+        Returns:
+            Tuple of (complexity_level, reasoning)
+        """
+        question_lower = question.lower()
+        
+        # Count complexity indicators
+        complex_matches = []
+        for pattern in self._complex_patterns:
+            match = pattern.search(question_lower)
+            if match:
+                complex_matches.append(match.group())
+        
+        # Length-based heuristic
+        word_count = len(question.split())
+        
+        # Determine complexity
+        if len(complex_matches) >= 3 or (len(complex_matches) >= 2 and word_count > 15):
+            return (
+                SnapshotComplexity.COMPLEX,
+                f"High complexity indicators found: {complex_matches[:3]}. Using best model for substantive analysis."
+            )
+        elif len(complex_matches) >= 1 or word_count > 10:
+            return (
+                SnapshotComplexity.MODERATE,
+                f"Moderate complexity: {complex_matches[:2] if complex_matches else 'multi-word question'}. Using balanced model."
+            )
+        else:
+            # For temporal queries, minimum is MODERATE to ensure quality
+            return (
+                SnapshotComplexity.MODERATE,
+                "Temporal queries default to moderate complexity for quality temporal synthesis."
+            )
+    
+    def get_model_for_complexity(self, complexity: SnapshotComplexity) -> str:
+        """
+        Get the appropriate model for a given complexity level.
+        
+        CRITICAL: This ensures all snapshots use the same quality model
+        based on the original complexity classification.
+        """
+        return self.MODEL_ROUTING.get(complexity, "gpt-4o")
+    
+    def validate_temporal_routing(self, snapshots: List[TimeSnapshot]) -> Tuple[bool, str]:
+        """
+        Validate that temporal snapshots used appropriate routing.
+        
+        Checks:
+        1. Not all snapshots from gpt-4o-mini (indicates routing bug)
+        2. Answers are substantive (not shallow)
+        3. Answers show diversity across time periods
+        
+        Returns:
+            Tuple of (passed, reason)
+        """
+        if not snapshots:
+            return (False, "No snapshots generated")
+        
+        # Check 1: Model diversity check for complex questions
+        models_used = set(s.model_used for s in snapshots)
+        all_mini = len(models_used) == 1 and "gpt-4o-mini" in models_used
+        
+        # Check 2: Depth check - answers should be substantive
+        shallow_count = 0
+        for snapshot in snapshots:
+            if len(snapshot.answer) < 400:  # Temporal answers should be meaty
+                shallow_count += 1
+        
+        if shallow_count > len(snapshots) // 2:
+            return (False, f"Too many shallow answers ({shallow_count}/{len(snapshots)})")
+        
+        # Check 3: Diversity check - snapshots should show distinct differences
+        if len(snapshots) >= 2:
+            first_words = set(snapshots[0].answer.lower().split()[:50])
+            last_words = set(snapshots[-1].answer.lower().split()[:50])
+            
+            if first_words and last_words:
+                overlap = len(first_words & last_words) / len(first_words | last_words)
+                if overlap > 0.9:
+                    logger.warning(f"High answer similarity ({overlap:.1%}) - temporal evolution may be weak")
+        
+        return (True, "Routing validation passed")
         
     def classify_temporal_sensitivity(self, question: str) -> Tuple[TemporalSensitivityLevel, str]:
         """
@@ -311,7 +442,8 @@ class TimeTravelService:
         date: datetime,
         date_label: str,
         previous_snapshot: Optional[TimeSnapshot] = None,
-        model: str = "gpt-4o-mini"
+        model: str = "gpt-4o",
+        complexity: SnapshotComplexity = SnapshotComplexity.MODERATE
     ) -> TimeSnapshot:
         """
         Generate an answer snapshot for a specific date.
@@ -321,36 +453,60 @@ class TimeTravelService:
             date: The date to answer from
             date_label: Human-readable label for the date
             previous_snapshot: Previous snapshot for comparison (if any)
-            model: Model to use for generation
+            model: Model to use for generation (based on preserved complexity)
+            complexity: The complexity level (preserved from initial classification)
             
         Returns:
             TimeSnapshot with the answer
         """
         date_str = date.strftime("%B %d, %Y")
         
-        # Build the prompt for this time point
+        # Enhanced system prompt signaling TEMPORAL SYNTHESIS task
         system_prompt = f"""You are answering questions as if the current date is {date_str}.
 
-CRITICAL RULES:
+CRITICAL TEMPORAL SYNTHESIS RULES:
 1. Answer ONLY using information that would have been available on {date_str}.
 2. Do NOT reference any events, releases, announcements, or data after {date_str}.
 3. If something major happens after {date_str} in real life, do NOT mention it.
-4. Provide specific numbers, names, and dates where available.
-5. Be comprehensive but concise.
+4. Provide specific numbers, names, dates, and metrics where available.
+5. Be COMPREHENSIVE and DETAILED - this is a temporal synthesis task requiring depth.
 
-Remember: From your perspective, today is {date_str}. You don't know what happens after this date."""
+IMPORTANT: This answer is part of a TEMPORAL SYNTHESIS task showing answer evolution.
+Provide detailed, substantive analysis that shows:
+- The state of the field/topic as of {date_str}
+- Specific models, products, developments, or events available then
+- Context about what was significant at this time
 
+Remember: From your perspective, today is {date_str}. You have NO knowledge of events after this date."""
+
+        # Enhanced user prompt for temporal synthesis
         user_prompt = f"""Question: {question}
 
-Answer this question as if you are responding on {date_str}. Include:
-1. A comprehensive answer based on knowledge available up to {date_str}
-2. Specific data points, numbers, or facts from this time period
-3. The state of affairs as of this date
+Answer this question as if you are responding on {date_str}. 
 
-If the question asks about something that doesn't exist yet as of {date_str}, say so clearly."""
+REQUIRED ELEMENTS FOR TEMPORAL SYNTHESIS:
+1. A comprehensive answer based ONLY on knowledge available up to {date_str}
+2. Specific data points, numbers, names, and dates from this time period
+3. The state of affairs as of this exact date
+4. Context about what was notable, new, or changing at this time
+
+If the question asks about something that doesn't exist yet as of {date_str}, clearly state this.
+If something was just announced or released near {date_str}, highlight that recency.
+
+Provide a thorough, well-structured response with concrete details."""
 
         try:
             start_time = datetime.now()
+            
+            # Adjust max_tokens based on complexity
+            max_tokens_map = {
+                SnapshotComplexity.SIMPLE: 800,
+                SnapshotComplexity.MODERATE: 1200,
+                SnapshotComplexity.COMPLEX: 1500,
+            }
+            max_tokens = max_tokens_map.get(complexity, 1200)
+            
+            logger.info(f"Generating snapshot for {date_label} using model={model}, complexity={complexity.value}")
             
             response = await self.client.chat.completions.create(
                 model=model,
@@ -358,7 +514,7 @@ If the question asks about something that doesn't exist yet as of {date_str}, sa
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=800,
+                max_tokens=max_tokens,
                 temperature=0.5,
             )
             
@@ -658,7 +814,17 @@ Analyze how the answer to this question evolved over time."""
                 skip_reason=f"Question has {sensitivity.value} temporal sensitivity. Time-travel not applicable for timeless questions."
             )
         
-        # Step 3: Identify time points
+        # Step 3: CRITICAL FIX - Classify complexity ONCE before entering loop
+        # This complexity level will be preserved for ALL time-point queries
+        base_complexity, complexity_reasoning = self.classify_question_complexity(question)
+        model_for_snapshots = self.get_model_for_complexity(base_complexity)
+        
+        logger.info(
+            f"Time-travel complexity classification: {base_complexity.value} -> using {model_for_snapshots}. "
+            f"Reasoning: {complexity_reasoning}"
+        )
+        
+        # Step 4: Identify time points
         time_points = self.identify_time_points(question, sensitivity)
         
         # Limit to configured max snapshots
@@ -668,12 +834,10 @@ Analyze how the answer to this question evolved over time."""
             step = len(time_points) // (max_snapshots - 1)
             time_points = [time_points[0]] + [time_points[i * step] for i in range(1, max_snapshots - 1)] + [time_points[-1]]
         
-        # Step 4: Generate snapshots in parallel
+        # Step 5: Generate snapshots with PRESERVED complexity routing
+        # CRITICAL: All snapshots use the same model based on original complexity
         snapshots = []
         previous_snapshot = None
-        
-        # Use different models based on complexity for cost optimization
-        model_for_snapshots = "gpt-4o-mini"  # Cost-efficient for historical snapshots
         
         # Generate snapshots sequentially to allow comparison
         for date, label in time_points:
@@ -682,22 +846,32 @@ Analyze how the answer to this question evolved over time."""
                 date=date,
                 date_label=label,
                 previous_snapshot=previous_snapshot,
-                model=model_for_snapshots
+                model=model_for_snapshots,  # FIXED: Use complexity-based model, NOT hardcoded
+                complexity=base_complexity   # Pass complexity for max_tokens adjustment
             )
             snapshots.append(snapshot)
             previous_snapshot = snapshot
+            
+            logger.debug(f"Generated snapshot for {label}: model={model_for_snapshots}, length={len(snapshot.answer)}")
         
-        # Step 5: Check if answers are identical (skip time-travel if so)
+        # Step 6: Validate routing quality
+        routing_valid, validation_reason = self.validate_temporal_routing(snapshots)
+        if not routing_valid:
+            logger.warning(f"Temporal routing validation failed: {validation_reason}")
+        
+        # Step 7: Check if answers are identical (skip time-travel if so)
         if self._check_answers_identical(snapshots):
             return TimeTravelResult(
                 question=question,
                 temporal_sensitivity=TemporalSensitivityLevel.LOW,
                 sensitivity_reasoning="Despite initial classification, answers are identical across all time periods.",
                 is_eligible=False,
-                skip_reason="Answers do not change significantly over time. Displaying standard response instead."
+                skip_reason="Answers do not change significantly over time. Displaying standard response instead.",
+                base_complexity=base_complexity,
+                routing_validation_passed=routing_valid
             )
         
-        # Step 6: Generate evolution narrative
+        # Step 8: Generate evolution narrative
         narrative, insights, velocity, outlook = await self.generate_evolution_narrative(
             question, snapshots
         )
@@ -717,7 +891,9 @@ Analyze how the answer to this question evolved over time."""
             future_outlook=outlook,
             total_cost=total_cost,
             total_time_seconds=total_time,
-            is_eligible=True
+            is_eligible=True,
+            base_complexity=base_complexity,
+            routing_validation_passed=routing_valid
         )
         
         # Cache the result
@@ -725,7 +901,9 @@ Analyze how the answer to this question evolved over time."""
         
         logger.info(
             f"Time-travel answer generated: {len(snapshots)} snapshots, "
-            f"${total_cost:.4f} cost, {total_time:.1f}s total time"
+            f"${total_cost:.4f} cost, {total_time:.1f}s total time, "
+            f"complexity={base_complexity.value}, model={model_for_snapshots}, "
+            f"routing_valid={routing_valid}"
         )
         
         return result

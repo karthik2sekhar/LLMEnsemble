@@ -370,4 +370,7 @@ class TimeTravelResponse(BaseModel):
     total_cost: float = 0.0
     total_time_seconds: float = 0.0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    # Routing fix: expose complexity classification for transparency
+    base_complexity: Optional[str] = Field(default=None, description="Complexity classification used for model routing")
+    routing_validation_passed: Optional[bool] = Field(default=None, description="Whether routing validation passed")
 

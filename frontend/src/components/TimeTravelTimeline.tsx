@@ -38,6 +38,9 @@ export interface TimeTravelResponse {
   total_cost: number;
   total_time_seconds: number;
   timestamp: string;
+  // Routing fix: expose complexity classification for transparency
+  base_complexity?: string;
+  routing_validation_passed?: boolean;
 }
 
 interface TimeTravelTimelineProps {
@@ -60,6 +63,13 @@ const velocityColors: Record<string, string> = {
   slow: 'text-blue-500',
   minimal: 'text-gray-500',
   none: 'text-gray-400',
+};
+
+// Complexity badge colors for routing transparency
+const complexityColors: Record<string, string> = {
+  complex: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+  moderate: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  simple: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
 };
 
 export const TimeTravelTimeline: React.FC<TimeTravelTimelineProps> = ({
@@ -137,6 +147,11 @@ export const TimeTravelTimeline: React.FC<TimeTravelTimelineProps> = ({
             <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${sensitivityColors[result.temporal_sensitivity]}`}>
               ⭐ {result.temporal_sensitivity.toUpperCase()} Sensitivity
             </span>
+            {result.base_complexity && (
+              <span className={`px-3 py-1.5 text-sm font-medium rounded-full ${complexityColors[result.base_complexity] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400'}`}>
+                🧠 {result.base_complexity.toUpperCase()} Complexity
+              </span>
+            )}
           </div>
         </div>
         

@@ -235,6 +235,9 @@ export interface TimeTravelResponse {
   total_cost: number;
   total_time_seconds: number;
   timestamp: string;
+  // Routing fix: expose complexity classification for transparency
+  base_complexity?: string;
+  routing_validation_passed?: boolean;
 }
 
 export interface TemporalSensitivityCheck {
