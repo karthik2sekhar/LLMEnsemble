@@ -1,0 +1,170 @@
+# GitHub Actions CI/CD Pipeline for AWS EKS Deployment
+# This workflow builds Docker images and deploys to EKS on push to main
+
+name: Deploy to AWS EKS
+
+on:
+  push:
+    branches:
+      - main
+  # Allow manual trigger
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY_BACKEND: llm-ensemble-backend
+  ECR_REPOSITORY_FRONTEND: llm-ensemble-frontend
+  EKS_CLUSTER_NAME: llm-ensemble-cluster
+  NAMESPACE: llm-ensemble
+
+jobs:
+  # Job 1: Build and push Docker images to ECR
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC authentication
+    
+    outputs:
+      backend-image: ${{ steps.build-backend.outputs.image }}
+      frontend-image: ${{ steps.build-frontend.outputs.image }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push Backend image
+        id: build-backend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd backend
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push Frontend image
+        id: build-frontend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd frontend
+          # Build with the ALB URL (will be updated after first deployment)
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=http://llm-backend-service:8000 \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=http://llm-backend-service:8000 \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  # Job 2: Deploy to EKS
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+
+      - name: Get AWS Account ID
+        id: aws-account
+        run: |
+          echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Update secrets with API keys
+        run: |
+          kubectl create secret generic llm-api-secrets \
+            --namespace=$NAMESPACE \
+            --from-literal=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            --from-literal=PERPLEXITY_API_KEY=${{ secrets.PERPLEXITY_API_KEY }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply ConfigMap
+        run: |
+          kubectl apply -f k8s/secrets.yaml --namespace=$NAMESPACE || true
+
+      - name: Update deployment images and apply
+        env:
+          AWS_ACCOUNT_ID: ${{ steps.aws-account.outputs.account_id }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Replace placeholder with actual ECR image URIs
+          sed -i "s|\${AWS_ACCOUNT_ID}|$AWS_ACCOUNT_ID|g" k8s/backend-deployment.yaml
+          sed -i "s|\${AWS_REGION}|$AWS_REGION|g" k8s/backend-deployment.yaml
+          sed -i "s|:latest|:$IMAGE_TAG|g" k8s/backend-deployment.yaml
+          
+          sed -i "s|\${AWS_ACCOUNT_ID}|$AWS_ACCOUNT_ID|g" k8s/frontend-deployment.yaml
+          sed -i "s|\${AWS_REGION}|$AWS_REGION|g" k8s/frontend-deployment.yaml
+          sed -i "s|:latest|:$IMAGE_TAG|g" k8s/frontend-deployment.yaml
+          
+          # Apply all Kubernetes manifests
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/backend-deployment.yaml
+          kubectl apply -f k8s/frontend-deployment.yaml
+          kubectl apply -f k8s/ingress.yaml
+          kubectl apply -f k8s/hpa.yaml
+
+      - name: Wait for deployments to be ready
+        run: |
+          kubectl rollout status deployment/llm-backend --namespace=$NAMESPACE --timeout=300s
+          kubectl rollout status deployment/llm-frontend --namespace=$NAMESPACE --timeout=300s
+
+      - name: Get Application URL
+        run: |
+          echo "Waiting for ALB to be provisioned..."
+          sleep 30
+          ALB_URL=$(kubectl get ingress llm-ensemble-ingress -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "=========================================="
+          echo "🚀 Application deployed successfully!"
+          echo "🌐 Application URL: http://$ALB_URL"
+          echo "🔧 API Health Check: http://$ALB_URL/api/health"
+          echo "=========================================="
+
+      - name: Show deployment status
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n $NAMESPACE
+          echo ""
+          echo "=== Services ==="
+          kubectl get services -n $NAMESPACE
+          echo ""
+          echo "=== Ingress ==="
+          kubectl get ingress -n $NAMESPACE

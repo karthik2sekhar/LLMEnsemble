@@ -1,0 +1,67 @@
+# EKS Cluster Configuration for eksctl
+# This defines the entire cluster infrastructure
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: llm-ensemble-cluster
+  region: us-east-1  # Change to your preferred region
+  version: "1.28"
+  tags:
+    Project: LLMEnsemble
+    Environment: Production
+    Owner: YourName
+
+# IAM configuration for the cluster
+iam:
+  withOIDC: true
+
+# Managed node groups for cost optimization
+managedNodeGroups:
+  - name: llm-workers
+    instanceType: t3.medium  # Cost-optimized instance type
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 3
+    volumeSize: 20
+    volumeType: gp3
+    # Use spot instances for 60-70% cost savings
+    spot: true
+    labels:
+      role: worker
+      nodegroup: llm-workers
+    tags:
+      Project: LLMEnsemble
+      NodeType: Worker
+    # IAM policies for ECR access and CloudWatch
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        autoScaler: true
+        cloudWatch: true
+        albIngress: true
+
+# CloudWatch logging for monitoring
+cloudWatch:
+  clusterLogging:
+    enableTypes:
+      - api
+      - audit
+      - authenticator
+      - controllerManager
+      - scheduler
+
+# VPC configuration (uses default VPC settings)
+vpc:
+  autoAllocateIPv6: false
+  nat:
+    gateway: Single  # Cost optimization: single NAT gateway
+
+# Add-ons for cluster functionality
+addons:
+  - name: vpc-cni
+    version: latest
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest

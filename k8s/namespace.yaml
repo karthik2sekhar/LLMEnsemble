@@ -1,0 +1,9 @@
+# Kubernetes Namespace for LLM Ensemble Application
+# This isolates all resources for easy cleanup
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-ensemble
+  labels:
+    app: llm-ensemble
+    environment: production

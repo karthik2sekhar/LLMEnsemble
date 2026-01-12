@@ -1,0 +1,46 @@
+# AWS ALB Ingress Controller Configuration
+# This creates an Application Load Balancer that routes traffic
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llm-ensemble-ingress
+  namespace: llm-ensemble
+  labels:
+    app: llm-ensemble
+  annotations:
+    # Use AWS ALB Ingress Controller
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    # Health check settings
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    # SSL redirect (uncomment if using HTTPS)
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    # alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # Tags for cost tracking
+    alb.ingress.kubernetes.io/tags: "Project=LLMEnsemble,Environment=Production"
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          # API routes go to backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: llm-backend-service
+                port:
+                  number: 8000
+          # All other routes go to frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: llm-frontend-service
+                port:
+                  number: 3000

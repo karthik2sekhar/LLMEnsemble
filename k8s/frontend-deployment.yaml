@@ -1,0 +1,93 @@
+# Frontend Deployment - Next.js Application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-frontend
+  namespace: llm-ensemble
+  labels:
+    app: llm-ensemble
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-ensemble
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: llm-ensemble
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          # Replace with your ECR image URI
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/llm-ensemble-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            # API URL points to internal backend service
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://llm-backend-service:8000"
+          # Resource limits for cost optimization
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      # Pod anti-affinity for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: component
+                      operator: In
+                      values:
+                        - frontend
+                topologyKey: kubernetes.io/hostname
+---
+# Frontend Service - Internal ClusterIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-frontend-service
+  namespace: llm-ensemble
+  labels:
+    app: llm-ensemble
+    component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: llm-ensemble
+    component: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+      name: http
