@@ -5,8 +5,9 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-// API Base URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// API Base URL - Empty string uses relative paths (works with ingress /api routing)
+// Only use localhost in development when NEXT_PUBLIC_API_URL is explicitly set
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 // Types
 export interface TokenUsage {
