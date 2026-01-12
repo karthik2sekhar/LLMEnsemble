@@ -3,9 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   // Enable standalone output for Docker deployment
   output: 'standalone',
-  // Environment variables
+  // Environment variables - use empty string for relative API paths in k8s
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || '',
   },
 }
 
