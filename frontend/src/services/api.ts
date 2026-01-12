@@ -268,7 +268,7 @@ export interface RoutingStats {
 // Create axios instance with default config
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 120000, // 2 minutes to allow for multiple model calls
+  timeout: 180000, // 3 minutes to allow for time-travel (can take 90s+)
   headers: {
     'Content-Type': 'application/json',
   },
