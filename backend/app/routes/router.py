@@ -15,8 +15,23 @@ from ..services.router_service import router_service
 from ..services.search_service import search_service
 from ..services.time_travel_service import time_travel_service
 from ..utils.logging import get_logger
+from ..utils.monitoring import track_latency, trace_operation, metrics_collector
 
-logger = get_logger(__name__)
+# Feature flag for optimized time-travel
+USE_OPTIMIZED_TIME_TRAVEL = True
+
+# Conditionally import optimized service
+if USE_OPTIMIZED_TIME_TRAVEL:
+    try:
+        from ..services.time_travel_service_optimized import optimized_time_travel_service
+        logger = get_logger(__name__)
+        logger.info("Using OPTIMIZED time-travel service (parallel execution)")
+    except ImportError:
+        USE_OPTIMIZED_TIME_TRAVEL = False
+        logger = get_logger(__name__)
+        logger.warning("Optimized time-travel service not available, using standard service")
+else:
+    logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["router"])
 
@@ -206,14 +221,36 @@ async def time_travel_answer(request: TimeTravelRequest) -> TimeTravelResponse:
     - Evolution narrative
     - Insights and future outlook
     - Cost and timing metrics
+    - Performance breakdown (optimized version only)
     """
+    import time
+    start_time = time.time()
+    
     try:
         logger.info(f"Time-travel request: {request.question[:100]}...")
         
-        # Generate time-travel answer
-        result = await time_travel_service.generate_time_travel_answer(
-            question=request.question,
-            force_time_travel=request.force_time_travel
+        # Use optimized service if available (70%+ faster)
+        if USE_OPTIMIZED_TIME_TRAVEL:
+            logger.info("Using OPTIMIZED parallel time-travel service")
+            result = await optimized_time_travel_service.generate_time_travel_answer(
+                question=request.question,
+                force_time_travel=request.force_time_travel
+            )
+        else:
+            # Fallback to original sequential service
+            result = await time_travel_service.generate_time_travel_answer(
+                question=request.question,
+                force_time_travel=request.force_time_travel
+            )
+        
+        # Record metrics
+        total_time_ms = (time.time() - start_time) * 1000
+        metrics_collector.record_latency(
+            "time_travel_total",
+            total_time_ms,
+            success=True,
+            optimized=USE_OPTIMIZED_TIME_TRAVEL,
+            num_snapshots=len(result.snapshots) if result.snapshots else 0
         )
         
         # Convert to response schema
@@ -232,7 +269,7 @@ async def time_travel_answer(request: TimeTravelRequest) -> TimeTravelResponse:
             for s in result.snapshots
         ]
         
-        return TimeTravelResponse(
+        response = TimeTravelResponse(
             question=result.question,
             temporal_sensitivity=TemporalSensitivityLevel(result.temporal_sensitivity.value),
             sensitivity_reasoning=result.sensitivity_reasoning,
@@ -246,10 +283,16 @@ async def time_travel_answer(request: TimeTravelRequest) -> TimeTravelResponse:
             total_cost=result.total_cost,
             total_time_seconds=result.total_time_seconds,
             timestamp=datetime.utcnow(),
-            # Routing fix: expose complexity classification for transparency
             base_complexity=result.base_complexity.value if result.base_complexity else None,
             routing_validation_passed=result.routing_validation_passed
         )
+        
+        logger.info(
+            f"Time-travel complete: {len(snapshots)} snapshots in {result.total_time_seconds:.1f}s "
+            f"(optimized={USE_OPTIMIZED_TIME_TRAVEL})"
+        )
+        
+        return response
         
     except ValueError as e:
         logger.error(f"Validation error in time-travel: {e}")

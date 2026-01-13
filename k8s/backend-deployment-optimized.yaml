@@ -1,0 +1,144 @@
+# Backend Deployment - FastAPI Application (OPTIMIZED)
+# 
+# Performance Optimizations Applied:
+# 1. Increased memory for parallel API calls
+# 2. Increased CPU for async processing
+# 3. Connection pooling friendly resource limits
+# 4. Prometheus metrics annotations
+# 5. Optimized health check intervals
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-backend
+  namespace: llm-ensemble
+  labels:
+    app: llm-ensemble
+    component: backend
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/api/monitoring/metrics"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-ensemble
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: llm-ensemble
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/api/monitoring/metrics"
+    spec:
+      containers:
+        - name: backend
+          # Replace with your ECR image URI
+          image: 916008230843.dkr.ecr.us-east-1.amazonaws.com/llm-ensemble-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          # Environment variables from secrets and configmap
+          envFrom:
+            - secretRef:
+                name: llm-api-secrets
+            - configMapRef:
+                name: llm-config
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # Enable optimized time-travel service
+            - name: USE_OPTIMIZED_TIME_TRAVEL
+              value: "true"
+            # Increase async connection pool
+            - name: HTTPX_MAX_CONNECTIONS
+              value: "20"
+            # Increase request timeout for time-travel
+            - name: REQUEST_TIMEOUT
+              value: "120"
+          
+          # OPTIMIZED: Increased resources for parallel API calls
+          # Parallel execution requires more memory for concurrent coroutines
+          # and CPU for async I/O handling
+          resources:
+            requests:
+              memory: "384Mi"   # Increased from 256Mi for parallel tasks
+              cpu: "300m"      # Increased from 250m for async handling
+            limits:
+              memory: "768Mi"  # Increased from 512Mi for burst parallel work
+              cpu: "750m"      # Increased from 500m for concurrent API calls
+          
+          # Health checks - optimized intervals
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30    # Reduced frequency to save resources
+            timeoutSeconds: 10   # Increased timeout
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 15    # Reduced frequency
+            timeoutSeconds: 10
+            failureThreshold: 3
+            
+          # Startup probe for slow-starting containers
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30  # Allow up to 150s for startup
+            
+      # Pod anti-affinity for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: component
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+                
+      # Graceful shutdown for long-running requests
+      terminationGracePeriodSeconds: 120
+      
+---
+# Backend Service - Internal ClusterIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-backend-service
+  namespace: llm-ensemble
+  labels:
+    app: llm-ensemble
+    component: backend
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+spec:
+  type: ClusterIP
+  selector:
+    app: llm-ensemble
+    component: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http

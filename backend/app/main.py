@@ -13,12 +13,17 @@ from fastapi.responses import JSONResponse
 from .config import get_settings
 from .routes import ensemble_router, health_router
 from .routes.router import router as router_router
+from .routes.monitoring import router as monitoring_router
 from .utils.logging import get_logger, setup_logging
 
 # Setup logging
 setup_logging()
 logger = get_logger(__name__)
 settings = get_settings()
+
+
+# Feature flag for optimized time-travel
+USE_OPTIMIZED_TIME_TRAVEL = True
 
 
 @asynccontextmanager
@@ -100,6 +105,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(health_router)
 app.include_router(ensemble_router)
 app.include_router(router_router)
+app.include_router(monitoring_router)
 
 
 # Run with uvicorn if executed directly

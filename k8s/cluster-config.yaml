@@ -6,7 +6,7 @@ kind: ClusterConfig
 metadata:
   name: llm-ensemble-cluster
   region: us-east-1  # Change to your preferred region
-  version: "1.28"
+  version: "1.31"
   tags:
     Project: LLMEnsemble
     Environment: Production

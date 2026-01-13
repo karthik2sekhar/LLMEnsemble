@@ -22,7 +22,7 @@ spec:
       containers:
         - name: frontend
           # Replace with your ECR image URI
-          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/llm-ensemble-frontend:latest
+          image: 916008230843.dkr.ecr.us-east-1.amazonaws.com/llm-ensemble-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
