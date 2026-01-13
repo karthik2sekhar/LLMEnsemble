@@ -1,24 +1,102 @@
 # LLM Ensemble - Root .gitignore
 
-# Environment files
+# ==================== Environment ====================
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
 
-# IDE
+# ==================== Python ====================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+.python-version
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+.eggs/
+*.whl
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+
+# Mypy / Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ==================== Node.js ====================
+node_modules/
+.next/
+out/
+.nuxt/
+dist/
+
+# Package manager files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Next.js build output
+.next/
+out/
+.vercel
+
+# ==================== IDE ====================
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-workspace
+*.sublime-project
+.project
+.classpath
+.settings/
 
-# OS files
+# ==================== OS files ====================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# Logs
+# ==================== Logs ====================
 *.log
 logs/
+npm-debug.log
+yarn-error.log
 
+# ==================== Docker ====================
+docker-compose.override.yml
+
+# ==================== Misc ====================
 # Docker volumes
 data/
 
@@ -26,3 +104,10 @@ data/
 tmp/
 temp/
 *.tmp
+*.temp
+*.bak
+*.backup
+
+# Local test files
+test_*.local.*
+*.local.json

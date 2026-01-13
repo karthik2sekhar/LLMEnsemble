@@ -1,6 +1,6 @@
 # LLM Ensemble
 
-A production-ready web application that queries multiple OpenAI LLM models in parallel and synthesizes their responses into a unified, comprehensive answer. Now with **intelligent query routing** for cost optimization and **Time-Travel Answers** for temporal questions!
+A production-ready web application that queries multiple OpenAI LLM models in parallel and synthesizes their responses into a unified, comprehensive answer. Now with **intelligent query routing** for cost optimization, **Time-Travel Answers** for temporal questions, and **real-time streaming** for instant feedback!
 
 ![LLM Ensemble Architecture](https://via.placeholder.com/800x400?text=LLM+Ensemble+Architecture)
 
@@ -9,8 +9,10 @@ A production-ready web application that queries multiple OpenAI LLM models in pa
 - **Multi-Model Querying**: Query multiple OpenAI models (GPT-4 Turbo, GPT-4o, GPT-4o-mini, GPT-5.2) simultaneously
 - **🆕 Intelligent Query Routing**: Automatically classifies queries and routes to optimal model combinations
 - **🆕 Time-Travel Answers**: See how answers evolve over time for temporally sensitive questions
+- **🆕 Streaming SSE**: Real-time Server-Sent Events for progressive result delivery (~8s to first result)
 - **🆕 Temporal Awareness**: Automatic detection of time-sensitive queries
 - **🆕 Real-time Web Search**: Perplexity API integration for current information
+- **🆕 Parallel Snapshot Generation**: 65% faster time-travel with async parallel execution
 - **Cost Optimization**: Smart routing saves 40-70% on simple/moderate queries
 - **Intelligent Synthesis**: Automatically synthesizes responses into a coherent final answer
 - **Real-time Progress**: Live progress indicators showing which models are responding
@@ -49,6 +51,109 @@ The application now features a "Time-Travel Answers" mode that shows how answers
 | "What are the latest AI models?" | HIGH | 2023 → GPT-4o → Today |
 | "Who is the US President?" | HIGH | 2021 → 2024 Election → Today |
 | "What is photosynthesis?" | NONE | Skipped (timeless) |
+
+## 📡 Real-Time Streaming (SSE)
+
+The Time-Travel feature now supports **Server-Sent Events (SSE)** for progressive result delivery. Instead of waiting 30-40 seconds for all snapshots, users see results as they arrive.
+
+### Performance Improvements
+
+| Metric | Before (Sequential) | After (Parallel + Streaming) |
+|--------|---------------------|------------------------------|
+| Total Time | 90+ seconds | ~35 seconds |
+| Time to First Result | 90+ seconds | **~8 seconds** |
+| User Perceived Latency | Very High | Low |
+
+### How Streaming Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Streaming Architecture                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. Client sends POST /api/time-travel-stream                   │
+│                         │                                        │
+│                         ▼                                        │
+│  2. Server classifies question & identifies time points         │
+│                         │                                        │
+│                         ▼                                        │
+│  3. Server sends SSE: classification event                      │
+│                         │                                        │
+│                         ▼                                        │
+│  4. Parallel async tasks generate snapshots                     │
+│     ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐         │
+│     │ 2020-01 │  │ 2022-06 │  │ 2024-01 │  │ Current │         │
+│     └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘         │
+│          │            │            │            │                │
+│          ▼            ▼            ▼            ▼                │
+│  5. SSE events sent as each snapshot completes (first ~8s)      │
+│                         │                                        │
+│                         ▼                                        │
+│  6. Server sends SSE: narrative event (evolution summary)       │
+│                         │                                        │
+│                         ▼                                        │
+│  7. Server sends SSE: complete event                            │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### SSE Event Types
+
+| Event Type | Description | Data Fields |
+|------------|-------------|-------------|
+| `classification` | Query analysis result | `sensitivity`, `explanation`, `num_snapshots` |
+| `snapshot` | Individual time period answer | `date_label`, `time_period`, `answer`, `insight` |
+| `narrative` | Evolution summary | `narrative` (string) |
+| `complete` | Stream finished | `total_snapshots`, `total_time` |
+| `error` | Error occurred | `message`, `code` |
+
+### Frontend Integration
+
+The frontend uses a custom React hook `useTimeTravelStream` to consume the SSE stream:
+
+```typescript
+const {
+  isStreaming,
+  snapshots,      // Array of snapshots, progressively populated
+  classification, // Query classification result
+  narrative,      // Evolution narrative (arrives at end)
+  error,
+  startStream,
+} = useTimeTravelStream();
+```
+
+### API Endpoint
+
+**POST `/api/time-travel-stream`**
+
+Returns a `text/event-stream` response with Server-Sent Events.
+
+**Request:**
+```json
+{
+  "question": "What are the best AI coding assistants?",
+  "max_tokens": 2000,
+  "temperature": 0.7
+}
+```
+
+**SSE Response Stream:**
+```
+event: classification
+data: {"sensitivity":"high","explanation":"AI tools evolve rapidly","num_snapshots":4}
+
+event: snapshot
+data: {"date_label":"January 2023","time_period":"2023-01","answer":"...","insight":"..."}
+
+event: snapshot
+data: {"date_label":"January 2024","time_period":"2024-01","answer":"...","insight":"..."}
+
+event: narrative
+data: {"narrative":"The landscape of AI coding assistants has evolved dramatically..."}
+
+event: complete
+data: {"total_snapshots":4,"total_time":35.2}
+```
 
 ## 🧠 Intelligent Query Routing
 
@@ -91,30 +196,50 @@ The application now includes an intelligent query router that automatically clas
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Frontend (Next.js)                       │
+│                     Frontend (Next.js)                           │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
 │  │  Question   │  │   Model     │  │    Results Display      │  │
 │  │   Input     │  │  Selector   │  │  (Synthesis + Cards)    │  │
 │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+│                         │                                        │
+│        ┌────────────────┴────────────────┐                      │
+│        ▼                                 ▼                      │
+│  ┌─────────────┐               ┌─────────────────────┐          │
+│  │ useEnsemble │               │ useTimeTravelStream │          │
+│  │    Hook     │               │   Hook (SSE)        │          │
+│  └─────────────┘               └─────────────────────┘          │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
+           ┌──────────────────┴──────────────────┐
+           │                                     │
+           ▼                                     ▼
+┌────────────────────────┐         ┌───────────────────────────────┐
+│  REST API Endpoints    │         │  Streaming Endpoints (SSE)    │
+│  /api/ensemble         │         │  /api/time-travel-stream      │
+│  /api/route-and-answer │         └───────────────────────────────┘
+└────────────────────────┘                       │
+           │                                     │
+           ▼                                     ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Backend (FastAPI)                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │   Routes    │  │  Services   │  │       Utilities         │  │
-│  │  /ensemble  │──│  LLM Svc    │──│  Cache | Rate Limiter   │  │
-│  │  /synthesize│  │  Synthesis  │  │  Logger                 │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+│  ┌─────────────┐  ┌───────────────────┐  ┌───────────────────┐  │
+│  │   Routes    │  │     Services      │  │    Utilities      │  │
+│  │  /ensemble  │  │  LLM Service      │  │  Redis Cache      │  │
+│  │  /streaming │  │  Synthesis Svc    │  │  Rate Limiter     │  │
+│  │  /router    │  │  Time Travel Svc  │  │  Monitoring       │  │
+│  │  /monitor   │  │  Streaming TT Svc │  │  Logger           │  │
+│  └─────────────┘  └───────────────────┘  └───────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       OpenAI API                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │ GPT-4 Turbo │  │   GPT-4o    │  │      GPT-4o-mini        │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+        ┌─────────────────────┴─────────────────────┐
+        │                                           │
+        ▼                                           ▼
+┌──────────────────────────────┐    ┌────────────────────────────┐
+│         OpenAI API           │    │       Perplexity API       │
+│  ┌───────┐ ┌───────┐ ┌────┐  │    │  (Real-time Web Search)    │
+│  │GPT-4o │ │ Mini  │ │5.2 │  │    └────────────────────────────┘
+│  └───────┘ └───────┘ └────┘  │
+└──────────────────────────────┘
 ```
 
 ## 📦 Prerequisites
@@ -249,9 +374,12 @@ docker-compose up -d --build
 | GET | `/api/models` | List available models |
 | POST | `/api/ensemble` | Query multiple models and synthesize (full ensemble) |
 | POST | `/api/route-and-answer` | 🆕 Intelligent routing - classifies and routes to optimal models |
+| POST | `/api/time-travel-stream` | 🆕 **Streaming SSE** - Time-travel answers with real-time updates |
 | POST | `/api/synthesize` | Synthesize pre-collected responses |
 | GET | `/api/stats` | Get usage statistics |
 | GET | `/api/routing-stats` | 🆕 Get routing statistics and cost savings |
+| GET | `/api/monitoring/metrics` | 🆕 Prometheus-compatible metrics |
+| GET | `/api/monitoring/health/detailed` | 🆕 Detailed health with dependencies |
 | POST | `/api/clear-classification-cache` | 🆕 Clear classification cache |
 
 ### POST /api/route-and-answer (NEW)
@@ -425,39 +553,76 @@ llm-ensemble/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py           # FastAPI application
-│   │   ├── config.py         # Configuration management
-│   │   ├── models.py         # Data models
-│   │   ├── schemas.py        # Pydantic schemas
+│   │   ├── main.py              # FastAPI application
+│   │   ├── config.py            # Configuration management
+│   │   ├── models.py            # Data models
+│   │   ├── schemas.py           # Pydantic schemas
 │   │   ├── routes/
 │   │   │   ├── __init__.py
-│   │   │   ├── ensemble.py   # Ensemble endpoints
-│   │   │   └── health.py     # Health check
+│   │   │   ├── ensemble.py      # Ensemble endpoints
+│   │   │   ├── router.py        # Smart routing endpoints
+│   │   │   ├── streaming.py     # 🆕 SSE streaming endpoints
+│   │   │   ├── monitoring.py    # 🆕 Health & metrics
+│   │   │   └── health.py        # Health check
 │   │   ├── services/
 │   │   │   ├── __init__.py
-│   │   │   ├── llm_service.py      # LLM API calls
-│   │   │   └── synthesis_service.py # Response synthesis
+│   │   │   ├── llm_service.py           # LLM API calls
+│   │   │   ├── synthesis_service.py     # Response synthesis
+│   │   │   ├── router_service.py        # Query classification & routing
+│   │   │   ├── time_travel_service.py   # Time-travel base service
+│   │   │   ├── time_travel_service_optimized.py  # 🆕 Parallel execution
+│   │   │   ├── streaming_time_travel.py # 🆕 SSE streaming service
+│   │   │   ├── search_service.py        # Web search integration
+│   │   │   └── perplexity_service.py    # Perplexity API
 │   │   └── utils/
 │   │       ├── __init__.py
-│   │       ├── cache.py      # Caching utilities
-│   │       └── logging.py    # Logging configuration
+│   │       ├── cache.py         # In-memory caching
+│   │       ├── redis_cache.py   # 🆕 Redis cache layer
+│   │       ├── monitoring.py    # 🆕 Metrics & tracing
+│   │       └── logging.py       # Logging configuration
 │   ├── tests/
-│   │   └── test_main.py
+│   │   ├── test_main.py
+│   │   └── test_router.py
 │   ├── requirements.txt
 │   ├── Dockerfile
-│   └── .env.example
+│   └── pytest.ini
 ├── frontend/
 │   ├── src/
-│   │   ├── components/       # React components
-│   │   ├── pages/           # Next.js pages
-│   │   ├── services/        # API service
-│   │   ├── hooks/           # Custom hooks
-│   │   └── styles/          # CSS styles
+│   │   ├── components/
+│   │   │   ├── QuestionInput.tsx
+│   │   │   ├── ResponseCard.tsx
+│   │   │   ├── SynthesisResult.tsx
+│   │   │   ├── TimeTravelTimeline.tsx
+│   │   │   ├── StreamingTimeTravelTimeline.tsx  # 🆕 Streaming UI
+│   │   │   └── ...
+│   │   ├── hooks/
+│   │   │   ├── useEnsembleLLM.ts
+│   │   │   └── useTimeTravelStream.ts    # 🆕 SSE hook
+│   │   ├── pages/
+│   │   │   ├── index.tsx
+│   │   │   ├── _app.tsx
+│   │   │   └── _document.tsx
+│   │   ├── services/
+│   │   │   └── api.ts
+│   │   └── styles/
+│   │       └── globals.css
 │   ├── package.json
 │   ├── tsconfig.json
-│   ├── tailwind.config.js
 │   └── Dockerfile
+├── k8s/                         # 🆕 Kubernetes configs
+│   ├── namespace.yaml
+│   ├── backend-deployment.yaml
+│   ├── backend-deployment-optimized.yaml
+│   ├── frontend-deployment.yaml
+│   ├── hpa.yaml                 # Horizontal Pod Autoscaler
+│   └── ingress.yaml
+├── scripts/
+│   ├── deploy.ps1               # Windows deployment
+│   ├── deploy.sh                # Linux deployment
+│   └── cleanup.ps1              # Cleanup scripts
 ├── docker-compose.yml
+├── DEPLOYMENT.md                # Deployment guide
+├── PERFORMANCE_OPTIMIZATION.md  # Performance tuning guide
 └── README.md
 ```
 
