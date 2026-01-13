@@ -7,7 +7,7 @@
  * Features Time-Travel Answers for temporally sensitive questions.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import { Zap, Info, AlertCircle, DollarSign, Clock, BarChart3, Settings, History } from 'lucide-react';
 import clsx from 'clsx';
@@ -23,9 +23,11 @@ import {
   RouteModeToggle,
   SmartRouteResult,
   TimeTravelTimeline,
+  StreamingTimeTravelTimeline,
 } from '@/components';
 import type { RouteMode, TimeTravelResponse } from '@/components';
 import { useEnsembleLLM } from '@/hooks/useEnsembleLLM';
+import { useTimeTravelStream } from '@/hooks/useTimeTravelStream';
 import api, { HealthResponse, RouteAndAnswerResponse, RoutingStats } from '@/services/api';
 
 export default function Home() {
@@ -56,10 +58,35 @@ export default function Home() {
   const [isSmartLoading, setIsSmartLoading] = useState(false);
   const [smartError, setSmartError] = useState<string | null>(null);
 
-  // Time-travel state
+  // Time-travel state (legacy batch mode - kept for fallback)
   const [timeTravelResponse, setTimeTravelResponse] = useState<TimeTravelResponse | null>(null);
   const [isTimeTravelLoading, setIsTimeTravelLoading] = useState(false);
   const [timeTravelError, setTimeTravelError] = useState<string | null>(null);
+  
+  // Track current question for streaming display
+  const [currentQuestion, setCurrentQuestion] = useState<string>('');
+
+  // Streaming time-travel hook - shows results progressively as they arrive
+  const {
+    result: streamingResult,
+    isStreaming,
+    progress: streamingProgress,
+    startStream,
+    cancelStream,
+    reset: resetStream,
+  } = useTimeTravelStream({
+    apiBaseUrl: '', // Use relative URL (same origin)
+    onSnapshot: (snapshot) => {
+      const period = snapshot.date_label || snapshot.time_period || snapshot.year || 'New';
+      toast.success(`📅 ${period} snapshot ready`, { duration: 2000 });
+    },
+    onComplete: () => {
+      toast.success('Time-travel analysis complete!');
+    },
+    onError: (error) => {
+      toast.error(`Streaming error: ${error}`);
+    },
+  });
 
   // Check API health on mount
   useEffect(() => {
@@ -168,30 +195,27 @@ export default function Home() {
     setSmartError(null);
   };
 
-  // Handle time-travel query
+  // Handle time-travel query - uses streaming for progressive results
   const handleTimeTravel = async (question: string) => {
-    setIsTimeTravelLoading(true);
-    setTimeTravelError(null);
+    // Clear old batch response and store question
     setTimeTravelResponse(null);
+    setTimeTravelError(null);
+    setCurrentQuestion(question);
     
+    // Use streaming - shows first result in ~8s instead of waiting 35s
     try {
-      const result = await api.getTimeTravelAnswer({
-        question,
-        force_time_travel: false,
-      });
-      setTimeTravelResponse(result);
+      await startStream(question, false);
     } catch (err: any) {
-      const errorMessage = err.message || 'Time-travel query failed';
+      const errorMessage = err.message || 'Time-travel streaming failed';
       setTimeTravelError(errorMessage);
       toast.error(errorMessage);
-    } finally {
-      setIsTimeTravelLoading(false);
     }
   };
 
-  // Clear time-travel response
+  // Clear time-travel response (both streaming and batch)
   const clearTimeTravelResponse = () => {
     setTimeTravelResponse(null);
+    resetStream();  // Also reset streaming state
     setTimeTravelError(null);
   };
 
@@ -217,21 +241,21 @@ export default function Home() {
 
   const stats = getSummaryStats();
   
-  // Determine current loading state
+  // Determine current loading state (streaming has its own loading indicator)
   const currentLoading = routeMode === 'smart' 
     ? isSmartLoading 
     : routeMode === 'time-travel' 
-      ? isTimeTravelLoading 
+      ? false  // Streaming shows its own progress bar
       : isLoading;
   const currentError = routeMode === 'smart' 
     ? smartError 
     : routeMode === 'time-travel' 
-      ? timeTravelError 
+      ? (timeTravelError || streamingResult?.error || null)
       : error;
   const hasResponse = routeMode === 'smart' 
     ? !!smartRouteResponse 
     : routeMode === 'time-travel' 
-      ? !!timeTravelResponse 
+      ? (!!timeTravelResponse || (streamingResult?.snapshots?.length ?? 0) > 0 || isStreaming)
       : !!response;
 
   return (
@@ -423,8 +447,33 @@ export default function Home() {
           </div>
         )}
 
-        {/* Time-Travel Results */}
-        {routeMode === 'time-travel' && timeTravelResponse && !isTimeTravelLoading && (
+        {/* Time-Travel Streaming Results */}
+        {routeMode === 'time-travel' && (isStreaming || (streamingResult?.snapshots?.length ?? 0) > 0 || streamingResult?.isComplete) && (
+          <div className="space-y-8 animate-fade-in">
+            <StreamingTimeTravelTimeline 
+              result={streamingResult}
+              isStreaming={isStreaming}
+              progress={streamingProgress}
+              question={currentQuestion}
+              onCancel={cancelStream}
+            />
+            
+            {/* Clear button - only show when not streaming */}
+            {!isStreaming && streamingResult?.isComplete && (
+              <div className="text-center">
+                <button
+                  onClick={clearTimeTravelResponse}
+                  className="px-6 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  Clear results and ask another question
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Time-Travel Batch Results (legacy fallback) */}
+        {routeMode === 'time-travel' && timeTravelResponse && !isStreaming && (streamingResult?.snapshots?.length ?? 0) === 0 && (
           <div className="space-y-8 animate-fade-in">
             <TimeTravelTimeline result={timeTravelResponse} />
             

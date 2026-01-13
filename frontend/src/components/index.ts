@@ -21,3 +21,6 @@ export { SearchResults } from './SearchResults';
 // Time-travel components
 export { TimeTravelTimeline } from './TimeTravelTimeline';
 export type { TimeTravelResponse, TimeSnapshot, TemporalSensitivityLevel } from './TimeTravelTimeline';
+
+// Streaming time-travel components
+export { StreamingTimeTravelTimeline } from './StreamingTimeTravelTimeline';

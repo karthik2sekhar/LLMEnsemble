@@ -14,6 +14,7 @@ from .config import get_settings
 from .routes import ensemble_router, health_router
 from .routes.router import router as router_router
 from .routes.monitoring import router as monitoring_router
+from .routes.streaming import router as streaming_router
 from .utils.logging import get_logger, setup_logging
 
 # Setup logging
@@ -106,6 +107,7 @@ app.include_router(health_router)
 app.include_router(ensemble_router)
 app.include_router(router_router)
 app.include_router(monitoring_router)
+app.include_router(streaming_router)
 
 
 # Run with uvicorn if executed directly
